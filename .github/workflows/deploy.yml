@@ -1,0 +1,66 @@
+name: Deploy to Tencent SCF
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Package for SCF
+        run: |
+          # 将 dist/ 与生产依赖一起打包
+          cp package.json dist/
+          cd dist
+          npm install --omit=dev --ignore-scripts
+          zip -r ../function.zip . -x "*.map"
+          cd ..
+          echo "Package size: $(du -sh function.zip | cut -f1)"
+
+      - name: Deploy to SCF
+        uses: tencentcloudbase/github-action-scf@v1.3.0
+        with:
+          secret_id: ${{ secrets.TENCENT_SECRET_ID }}
+          secret_key: ${{ secrets.TENCENT_SECRET_KEY }}
+          region: ${{ secrets.SCF_REGION }}
+          function_name: ${{ secrets.SCF_FUNCTION_NAME }}
+          namespace: ${{ secrets.SCF_NAMESPACE }}
+          zip_file: function.zip
+          handler: cloud-functions/index.main
+          runtime: Nodejs20.15
+          memory_size: 512
+          timeout: 120
+          environment: |
+            SILICONFLOW_API_KEY=${{ secrets.SILICONFLOW_API_KEY }}
+            TCB_ENV_ID=${{ secrets.TCB_ENV_ID }}
+            TCB_PUBLIC_ENV_ID=${{ secrets.TCB_PUBLIC_ENV_ID }}
+            TCB_REGION=${{ secrets.TCB_REGION }}
+            TCB_SECRET_ID=${{ secrets.TCB_SECRET_ID }}
+            TCB_SECRET_KEY=${{ secrets.TCB_SECRET_KEY }}
+            DB_ADAPTER=${{ secrets.DB_ADAPTER }}
+            MONGODB_URI=${{ secrets.MONGODB_URI }}
+            MONGODB_DB=${{ secrets.MONGODB_DB }}
+            KV_ADAPTER=${{ secrets.KV_ADAPTER }}
+            EO_SECRET_ID=${{ secrets.EO_SECRET_ID }}
+            EO_SECRET_KEY=${{ secrets.EO_SECRET_KEY }}
+            EO_ZONE_ID=${{ secrets.EO_ZONE_ID }}
+            KV_NAMESPACE=${{ secrets.KV_NAMESPACE }}
+            BLOB_ADAPTER=${{ secrets.BLOB_ADAPTER }}
+            BLOB_PUBLIC_BASE_URL=${{ secrets.BLOB_PUBLIC_BASE_URL }}
+            EO_BLOB_UPLOAD_URL=${{ secrets.EO_BLOB_UPLOAD_URL }}
+            EO_BLOB_UPLOAD_TOKEN=${{ secrets.EO_BLOB_UPLOAD_TOKEN }}
+            ADMIN_SECRET=${{ secrets.ADMIN_SECRET }}
