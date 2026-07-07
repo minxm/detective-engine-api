@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import tencentcloud from 'tencentcloud-sdk-nodejs';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;
-const SCF_HANDLER = 'cloud-functions/scf-entry.main';
+const SCF_HANDLER = 'scf-entry.main';
 
 const ENV_KEYS = [
   'SILICONFLOW_API_KEY',
