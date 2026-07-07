@@ -34,41 +34,38 @@ jobs:
           cd ..
           echo "Package size: $(du -sh function.zip | cut -f1)"
 
+      - name: Install Tencent Cloud CLI
+        run: pip install tccli
+
       - name: Deploy to SCF
-        uses: tencentcloudbase/github-action-scf@v1.3.0
-        with:
-          secret_id: ${{ secrets.TENCENT_SECRET_ID }}
-          secret_key: ${{ secrets.TENCENT_SECRET_KEY }}
-          region: ${{ secrets.SCF_REGION }}
-          function_name: ${{ secrets.SCF_FUNCTION_NAME }}
-          namespace: ${{ secrets.SCF_NAMESPACE }}
-          zip_file: function.zip
-          handler: cloud-functions/index.main
-          runtime: Nodejs20.15
-          memory_size: 512
-          timeout: 120
-          environment: |
-            SILICONFLOW_API_KEY=${{ secrets.SILICONFLOW_API_KEY }}
-            SILICONFLOW_BASE_URL=${{ secrets.SILICONFLOW_BASE_URL }}
-            AI_CHAT_MODEL=${{ secrets.AI_CHAT_MODEL }}
-            AI_CASE_MODEL=${{ secrets.AI_CASE_MODEL }}
-            AI_EVALUATE_MODEL=${{ secrets.AI_EVALUATE_MODEL }}
-            AI_IMAGE_MODEL=${{ secrets.AI_IMAGE_MODEL }}
-            TCB_ENV_ID=${{ secrets.TCB_ENV_ID }}
-            TCB_PUBLIC_ENV_ID=${{ secrets.TCB_PUBLIC_ENV_ID }}
-            TCB_REGION=${{ secrets.TCB_REGION }}
-            TCB_SECRET_ID=${{ secrets.TCB_SECRET_ID }}
-            TCB_SECRET_KEY=${{ secrets.TCB_SECRET_KEY }}
-            DB_ADAPTER=${{ secrets.DB_ADAPTER }}
-            MONGODB_URI=${{ secrets.MONGODB_URI }}
-            MONGODB_DB=${{ secrets.MONGODB_DB }}
-            KV_ADAPTER=${{ secrets.KV_ADAPTER }}
-            EO_SECRET_ID=${{ secrets.EO_SECRET_ID }}
-            EO_SECRET_KEY=${{ secrets.EO_SECRET_KEY }}
-            EO_ZONE_ID=${{ secrets.EO_ZONE_ID }}
-            KV_NAMESPACE=${{ secrets.KV_NAMESPACE }}
-            BLOB_ADAPTER=${{ secrets.BLOB_ADAPTER }}
-            BLOB_PUBLIC_BASE_URL=${{ secrets.BLOB_PUBLIC_BASE_URL }}
-            EO_BLOB_UPLOAD_URL=${{ secrets.EO_BLOB_UPLOAD_URL }}
-            EO_BLOB_UPLOAD_TOKEN=${{ secrets.EO_BLOB_UPLOAD_TOKEN }}
-            ADMIN_SECRET=${{ secrets.ADMIN_SECRET }}
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          SCF_REGION: ${{ secrets.SCF_REGION }}
+          SCF_FUNCTION_NAME: ${{ secrets.SCF_FUNCTION_NAME }}
+          SCF_NAMESPACE: ${{ secrets.SCF_NAMESPACE }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          SILICONFLOW_BASE_URL: ${{ secrets.SILICONFLOW_BASE_URL }}
+          AI_CHAT_MODEL: ${{ secrets.AI_CHAT_MODEL }}
+          AI_CASE_MODEL: ${{ secrets.AI_CASE_MODEL }}
+          AI_EVALUATE_MODEL: ${{ secrets.AI_EVALUATE_MODEL }}
+          AI_IMAGE_MODEL: ${{ secrets.AI_IMAGE_MODEL }}
+          TCB_ENV_ID: ${{ secrets.TCB_ENV_ID }}
+          TCB_PUBLIC_ENV_ID: ${{ secrets.TCB_PUBLIC_ENV_ID }}
+          TCB_REGION: ${{ secrets.TCB_REGION }}
+          TCB_SECRET_ID: ${{ secrets.TCB_SECRET_ID }}
+          TCB_SECRET_KEY: ${{ secrets.TCB_SECRET_KEY }}
+          DB_ADAPTER: ${{ secrets.DB_ADAPTER }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ secrets.MONGODB_DB }}
+          KV_ADAPTER: ${{ secrets.KV_ADAPTER }}
+          EO_SECRET_ID: ${{ secrets.EO_SECRET_ID }}
+          EO_SECRET_KEY: ${{ secrets.EO_SECRET_KEY }}
+          EO_ZONE_ID: ${{ secrets.EO_ZONE_ID }}
+          KV_NAMESPACE: ${{ secrets.KV_NAMESPACE }}
+          BLOB_ADAPTER: ${{ secrets.BLOB_ADAPTER }}
+          BLOB_PUBLIC_BASE_URL: ${{ secrets.BLOB_PUBLIC_BASE_URL }}
+          EO_BLOB_UPLOAD_URL: ${{ secrets.EO_BLOB_UPLOAD_URL }}
+          EO_BLOB_UPLOAD_TOKEN: ${{ secrets.EO_BLOB_UPLOAD_TOKEN }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+        run: bash scripts/deploy-scf.sh
