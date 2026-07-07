@@ -58,6 +58,52 @@ function buildEnvironment() {
   return { Variables: variables };
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForFunctionReady(
+  client: InstanceType<typeof ScfClient>,
+  functionName: string,
+  namespace: string,
+  maxWaitMs = 180_000
+) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const res = await client.GetFunction({ FunctionName: functionName, Namespace: namespace });
+    const status = res.Status ?? 'Unknown';
+    console.log(`Function status: ${status}`);
+    if (status === 'Active') return;
+    if (status === 'Failed' || status === 'CreateFailed') {
+      throw new Error(`Function deploy failed: ${res.StatusDesc ?? status}`);
+    }
+    await sleep(5000);
+  }
+  throw new Error('Timed out waiting for function to become Active');
+}
+
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  attempts = 6,
+  delayMs = 10_000
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const retryable = message.includes('Updating') || message.includes('更新');
+      if (!retryable || attempt === attempts) throw error;
+      console.log(`${label} retry ${attempt}/${attempts - 1} in ${delayMs / 1000}s: ${message}`);
+      await sleep(delayMs);
+    }
+  }
+  throw lastError;
+}
+
 async function main() {
   const secretId = requireEnv('TENCENT_SECRET_ID');
   const secretKey = requireEnv('TENCENT_SECRET_KEY');
@@ -92,14 +138,19 @@ async function main() {
     Publish: 'TRUE',
   });
 
+  console.log('Waiting for function code update to finish...');
+  await waitForFunctionReady(client, functionName, namespace);
+
   console.log('Updating function configuration...');
-  await client.UpdateFunctionConfiguration({
-    FunctionName: functionName,
-    Namespace: namespace,
-    Timeout: 120,
-    MemorySize: 512,
-    Environment: buildEnvironment(),
-  });
+  await withRetry('UpdateFunctionConfiguration', () =>
+    client.UpdateFunctionConfiguration({
+      FunctionName: functionName,
+      Namespace: namespace,
+      Timeout: 120,
+      MemorySize: 512,
+      Environment: buildEnvironment(),
+    })
+  );
 
   console.log('Deploy complete.');
 }
