@@ -1,0 +1,13 @@
+#!/bin/bash
+cd /var/user
+export PORT=9000
+
+if [ -x /var/lang/node20/bin/node ]; then
+  NODE_BIN=/var/lang/node20/bin/node
+elif [ -x /var/lang/node18/bin/node ]; then
+  NODE_BIN=/var/lang/node18/bin/node
+else
+  NODE_BIN=node
+fi
+
+exec "$NODE_BIN" cloud-functions/web-server.js

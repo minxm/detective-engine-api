@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 import tencentcloud from 'tencentcloud-sdk-nodejs';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;
-const SCF_HANDLER = 'scf-entry.main';
 
 const ENV_KEYS = [
   'SILICONFLOW_API_KEY',
@@ -140,11 +139,10 @@ async function main() {
     region,
   });
 
-  console.log('Uploading function code...');
+  console.log('Uploading function code (Web 函数 + scf_bootstrap)...');
   await client.UpdateFunctionCode({
     FunctionName: functionName,
     Namespace: namespace,
-    Handler: SCF_HANDLER,
     ZipFile: zipBuffer.toString('base64'),
     Publish: 'TRUE',
   });

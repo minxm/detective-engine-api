@@ -27,15 +27,17 @@ jobs:
           rm -rf .scf-build function.zip
           mkdir -p .scf-build
           cp -r dist/cloud-functions dist/src .scf-build/
-          cp cloud-functions/scf-entry.cjs .scf-build/
+          cp scf_bootstrap .scf-build/
           cp package.json package-lock.json .scf-build/
           cd .scf-build
+          chmod 755 scf_bootstrap
           npm install --omit=dev --ignore-scripts
           find . -name '*.d.ts' -delete
           find . -name '*.map' -delete
           zip -r ../function.zip .
           cd ..
           ls -lh function.zip
+          unzip -l function.zip | head -20
 
       - name: Deploy to SCF
         env:

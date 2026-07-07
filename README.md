@@ -113,7 +113,7 @@ npm run dev
 | `MONGODB_URI` / `MONGODB_DB` | MongoDB 连接（如启用） |
 | `KV_ADAPTER` / `BLOB_ADAPTER` | 可选，默认可填 `memory` / `local` |
 
-push 到 `main` 后 Actions 自动打包，并通过腾讯云 SDK 更新云函数。入口：`scf-entry.main`（zip 根目录 CJS 包装），运行时 Node.js 20。
+push 到 `main` 后 Actions 自动打包，并通过腾讯云 SDK 更新 **Web 函数**（含 `scf_bootstrap`，监听 9000 端口）。
 
 ### 方式二：控制台手动上传
 
@@ -122,6 +122,8 @@ npm run package:scf
 ```
 
 生成 `function.zip`，在 [SCF 控制台](https://console.cloud.tencent.com/scf) 上传代码包，并配置环境变量（同 `.env.example`）。
+
+函数类型须为 **Web 函数**，zip 根目录包含 `scf_bootstrap`（启动 `cloud-functions/web-server.js`，监听 9000 端口）。
 
 部署成功后访问根路径应返回 JSON（`service: detective-engine-api`），而不是 Hello World。
 
