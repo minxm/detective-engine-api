@@ -13,7 +13,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -26,21 +26,20 @@ jobs:
         run: |
           rm -rf .scf-build function.zip
           mkdir -p .scf-build
-          cp -r dist/* .scf-build/
+          cp -r dist/cloud-functions dist/src .scf-build/
           cp package.json package-lock.json .scf-build/
           cd .scf-build
           npm install --omit=dev --ignore-scripts
-          zip -r ../function.zip . -x "*.map"
+          find . -name '*.d.ts' -delete
+          find . -name '*.map' -delete
+          zip -r ../function.zip .
           cd ..
-          echo "Package size: $(du -sh function.zip | cut -f1)"
-
-      - name: Install Tencent Cloud CLI
-        run: pip install tccli
+          ls -lh function.zip
 
       - name: Deploy to SCF
         env:
-          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
-          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
           SCF_REGION: ${{ secrets.SCF_REGION }}
           SCF_FUNCTION_NAME: ${{ secrets.SCF_FUNCTION_NAME }}
           SCF_NAMESPACE: ${{ secrets.SCF_NAMESPACE }}
@@ -68,4 +67,4 @@ jobs:
           EO_BLOB_UPLOAD_URL: ${{ secrets.EO_BLOB_UPLOAD_URL }}
           EO_BLOB_UPLOAD_TOKEN: ${{ secrets.EO_BLOB_UPLOAD_TOKEN }}
           ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
-        run: bash scripts/deploy-scf.sh
+        run: npx tsx scripts/deploy-scf.ts

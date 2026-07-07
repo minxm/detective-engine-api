@@ -113,7 +113,7 @@ npm run dev
 | `MONGODB_URI` / `MONGODB_DB` | MongoDB 连接（如启用） |
 | `KV_ADAPTER` / `BLOB_ADAPTER` | 可选，默认可填 `memory` / `local` |
 
-push 到 `main` 后 Actions 自动打包，并通过腾讯云官方 CLI（`tccli`）更新云函数。入口：`cloud-functions/index.main`，运行时 Node.js 20。
+push 到 `main` 后 Actions 自动打包，并通过腾讯云 SDK 更新云函数（无需第三方 Action）。入口：`cloud-functions/index.main`，运行时 Node.js 20。
 
 ### 方式二：控制台手动上传
 

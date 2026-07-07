@@ -20,7 +20,8 @@ if (!existsSync(distDir)) {
 rmSync(stageDir, { recursive: true, force: true });
 mkdirSync(stageDir, { recursive: true });
 
-cpSync(distDir, stageDir, { recursive: true });
+cpSync(path.join(distDir, 'cloud-functions'), path.join(stageDir, 'cloud-functions'), { recursive: true });
+cpSync(path.join(distDir, 'src'), path.join(stageDir, 'src'), { recursive: true });
 cpSync(path.join(root, 'package.json'), path.join(stageDir, 'package.json'));
 cpSync(path.join(root, 'package-lock.json'), path.join(stageDir, 'package-lock.json'));
 
@@ -29,7 +30,7 @@ run('npm install --omit=dev --ignore-scripts', stageDir);
 if (existsSync(zipPath)) rmSync(zipPath);
 run(process.platform === 'win32'
   ? `powershell -NoProfile -Command "Compress-Archive -Path '${stageDir}\\*' -DestinationPath '${zipPath}' -Force"`
-  : `cd "${stageDir}" && zip -r "${zipPath}" . -x "*.map"`);
+  : `cd "${stageDir}" && find . -name '*.d.ts' -delete && find . -name '*.map' -delete && zip -r "${zipPath}" .`);
 
 console.log(`\nSCF package ready: ${zipPath}`);
 console.log('Upload this zip in Tencent Cloud SCF console, handler: cloud-functions/index.main');
