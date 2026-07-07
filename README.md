@@ -87,6 +87,46 @@ npm install
 npm run dev
 ```
 
+## 部署到腾讯云 SCF
+
+触发器 URL 示例：`https://1450903261-2c7ic9hgxq.ap-shanghai.tencentscf.com`
+
+前端 `.env.production` 中的 `VITE_API_BASE` 应指向 `{触发器URL}/api`。
+
+### 方式一：GitHub Actions 自动部署
+
+仓库 `Settings → Secrets → Actions` 添加：
+
+| Secret | 示例 / 说明 |
+|--------|-------------|
+| `TENCENT_SECRET_ID` | 腾讯云 API 密钥 |
+| `TENCENT_SECRET_KEY` | 腾讯云 API 密钥 |
+| `SCF_REGION` | `ap-shanghai` |
+| `SCF_FUNCTION_NAME` | 控制台中的函数名 |
+| `SCF_NAMESPACE` | `default` |
+| `SILICONFLOW_API_KEY` | 硅基流动密钥 |
+| `SILICONFLOW_BASE_URL` | `https://api.siliconflow.cn/v1` |
+| `AI_CHAT_MODEL` / `AI_CASE_MODEL` / `AI_EVALUATE_MODEL` / `AI_IMAGE_MODEL` | 同 `.env.example` |
+| `TCB_ENV_ID` / `TCB_PUBLIC_ENV_ID` / `TCB_REGION` | CloudBase |
+| `TCB_SECRET_ID` / `TCB_SECRET_KEY` | CloudBase 服务端密钥 |
+| `DB_ADAPTER` | 生产推荐 `mongodb`，测试可用 `memory` |
+| `MONGODB_URI` / `MONGODB_DB` | MongoDB 连接（如启用） |
+| `KV_ADAPTER` / `BLOB_ADAPTER` | 可选，默认可填 `memory` / `local` |
+
+push 到 `main` 后 Actions 自动打包并更新云函数。入口：`cloud-functions/index.main`，运行时 Node.js 20。
+
+### 方式二：控制台手动上传
+
+```bash
+npm run package:scf
+```
+
+生成 `function.zip`，在 [SCF 控制台](https://console.cloud.tencent.com/scf) 上传代码包，并配置环境变量（同 `.env.example`）。
+
+部署成功后访问根路径应返回 JSON（`service: detective-engine-api`），而不是 Hello World。
+
+> **注意**：SCF 上使用 `DB_ADAPTER=memory` 数据不持久，生产请用 MongoDB。
+
 ## API 路由
 
 | 方法 | 路径 | 说明 |

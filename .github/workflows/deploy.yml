@@ -3,6 +3,7 @@ name: Deploy to Tencent SCF
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -23,9 +24,11 @@ jobs:
 
       - name: Package for SCF
         run: |
-          # 将 dist/ 与生产依赖一起打包
-          cp package.json dist/
-          cd dist
+          rm -rf .scf-build function.zip
+          mkdir -p .scf-build
+          cp -r dist/* .scf-build/
+          cp package.json package-lock.json .scf-build/
+          cd .scf-build
           npm install --omit=dev --ignore-scripts
           zip -r ../function.zip . -x "*.map"
           cd ..
@@ -46,6 +49,11 @@ jobs:
           timeout: 120
           environment: |
             SILICONFLOW_API_KEY=${{ secrets.SILICONFLOW_API_KEY }}
+            SILICONFLOW_BASE_URL=${{ secrets.SILICONFLOW_BASE_URL }}
+            AI_CHAT_MODEL=${{ secrets.AI_CHAT_MODEL }}
+            AI_CASE_MODEL=${{ secrets.AI_CASE_MODEL }}
+            AI_EVALUATE_MODEL=${{ secrets.AI_EVALUATE_MODEL }}
+            AI_IMAGE_MODEL=${{ secrets.AI_IMAGE_MODEL }}
             TCB_ENV_ID=${{ secrets.TCB_ENV_ID }}
             TCB_PUBLIC_ENV_ID=${{ secrets.TCB_PUBLIC_ENV_ID }}
             TCB_REGION=${{ secrets.TCB_REGION }}

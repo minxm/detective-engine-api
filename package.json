@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch scripts/dev-server.ts",
     "build": "tsc -p tsconfig.json",
+    "package:scf": "tsx scripts/package-scf.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src cloud-functions scripts --ext .ts"
   },
