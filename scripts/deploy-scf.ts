@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import tencentcloud from 'tencentcloud-sdk-nodejs';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;
+const SCF_HANDLER = 'cloud-functions/scf-entry.main';
 
 const ENV_KEYS = [
   'SILICONFLOW_API_KEY',
@@ -62,6 +63,16 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function formatDeployFailure(res: Awaited<ReturnType<InstanceType<typeof ScfClient>['GetFunction']>>) {
+  const parts = [
+    res.StatusDesc,
+    res.CodeError,
+    res.CodeResult,
+    res.StatusReasons?.map((item) => item.ErrorMessage || item.ErrorCode).filter(Boolean).join('; '),
+  ].filter(Boolean);
+  return parts.join(' | ') || res.Status || 'Unknown error';
+}
+
 async function waitForFunctionReady(
   client: InstanceType<typeof ScfClient>,
   functionName: string,
@@ -74,8 +85,8 @@ async function waitForFunctionReady(
     const status = res.Status ?? 'Unknown';
     console.log(`Function status: ${status}`);
     if (status === 'Active') return;
-    if (status === 'Failed' || status === 'CreateFailed') {
-      throw new Error(`Function deploy failed: ${res.StatusDesc ?? status}`);
+    if (status === 'Failed' || status === 'CreateFailed' || status === 'UpdateFailed') {
+      throw new Error(`Function deploy failed (${status}): ${formatDeployFailure(res)}`);
     }
     await sleep(5000);
   }
@@ -133,7 +144,7 @@ async function main() {
   await client.UpdateFunctionCode({
     FunctionName: functionName,
     Namespace: namespace,
-    Handler: 'cloud-functions/index.main',
+    Handler: SCF_HANDLER,
     ZipFile: zipBuffer.toString('base64'),
     Publish: 'TRUE',
   });

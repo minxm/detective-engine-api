@@ -22,6 +22,7 @@ mkdirSync(stageDir, { recursive: true });
 
 cpSync(path.join(distDir, 'cloud-functions'), path.join(stageDir, 'cloud-functions'), { recursive: true });
 cpSync(path.join(distDir, 'src'), path.join(stageDir, 'src'), { recursive: true });
+cpSync(path.join(root, 'cloud-functions/scf-entry.cjs'), path.join(stageDir, 'cloud-functions/scf-entry.cjs'));
 cpSync(path.join(root, 'package.json'), path.join(stageDir, 'package.json'));
 cpSync(path.join(root, 'package-lock.json'), path.join(stageDir, 'package-lock.json'));
 
@@ -33,4 +34,4 @@ run(process.platform === 'win32'
   : `cd "${stageDir}" && find . -name '*.d.ts' -delete && find . -name '*.map' -delete && zip -r "${zipPath}" .`);
 
 console.log(`\nSCF package ready: ${zipPath}`);
-console.log('Upload this zip in Tencent Cloud SCF console, handler: cloud-functions/index.main');
+console.log(`Upload this zip in Tencent Cloud SCF console, handler: ${'cloud-functions/scf-entry.main'}`);

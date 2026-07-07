@@ -27,6 +27,7 @@ jobs:
           rm -rf .scf-build function.zip
           mkdir -p .scf-build
           cp -r dist/cloud-functions dist/src .scf-build/
+          cp cloud-functions/scf-entry.cjs .scf-build/cloud-functions/
           cp package.json package-lock.json .scf-build/
           cd .scf-build
           npm install --omit=dev --ignore-scripts
