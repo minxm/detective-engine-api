@@ -7,3 +7,9 @@ data/
 .DS_Store
 .scf-build/
 function.zip
+
+# tsc 偶发写入源码目录的编译产物（正式输出在 dist/）
+cloud-functions/**/*.js
+cloud-functions/**/*.d.ts
+cloud-functions/**/*.js.map
+cloud-functions/**/*.d.ts.map
