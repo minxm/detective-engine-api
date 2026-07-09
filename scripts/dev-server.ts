@@ -5,6 +5,7 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { URL } from 'node:url';
 import { handleRequest, readJsonBody, writeWebResponse } from '../src/router/index.js';
+import { warmupDatabase } from '../src/db/warmup.js';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const BLOB_DIR = path.resolve(process.env.DB_DATA_DIR ?? './data', 'blobs');
@@ -63,4 +64,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`[detective-engine-api] dev server listening on http://localhost:${PORT}`);
   console.log(`[detective-engine-api] DB_ADAPTER=${process.env.DB_ADAPTER ?? 'memory'} KV=${process.env.KV_ADAPTER ?? 'memory'} BLOB=${process.env.BLOB_ADAPTER ?? 'local'}`);
+  void warmupDatabase();
 });

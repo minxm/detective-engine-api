@@ -649,3 +649,8 @@ export function createFallbackCase(difficulty: Difficulty): CaseData {
     createdAt: now(),
   };
 }
+
+/** 识别开发兜底模板，避免库存中重复发放同一案件 */
+export function isFallbackTemplateCase(caseData: Pick<CaseData, 'title' | 'victim'>): boolean {
+  return caseData.title === TEMPLATE.title && caseData.victim.name === TEMPLATE.victim.name;
+}

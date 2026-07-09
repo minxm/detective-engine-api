@@ -1,33 +1,38 @@
 import type { CloudContext } from '../../src/router/index.js';
-import { jsonResponse, verifyAdminSecret } from '../../src/utils/index.js';
-import { isAdminRole } from '../../src/auth/roles.js';
-import { resolveAuthUser } from '../../src/auth/cloudbase.js';
+import { jsonResponse } from '../../src/utils/index.js';
+import { requireAdminUser } from '../../src/auth/admin-guard.js';
 import { getDatabase } from '../../src/db/index.js';
 import { getOnlineUserEstimate } from '../../src/services/job-cache.js';
+import { getDailyActivityStats } from '../../src/services/activity-stats.js';
+import { withRetry } from '../../src/utils/retry.js';
 
 export async function handleAdminDashboard(ctx: CloudContext): Promise<Response> {
-  const authUser = await resolveAuthUser(ctx.headers);
-  if (!isAdminRole(authUser?.role) && !verifyAdminSecret(ctx.headers)) {
+  if (!(await requireAdminUser(ctx.headers))) {
     return jsonResponse({ success: false, error: '无权限' }, 403);
   }
 
   const db = getDatabase();
-  const [inventoryCounts, aiStats, logs, users, onlineUsers] = await Promise.all([
-    db.inventory.countByDifficulty(),
-    db.aiLogs.stats(),
-    db.aiLogs.list(20),
-    db.users.list(100),
+  const [inventoryCounts, aiStats, logs, onlineUsers, dailyActivity] = await Promise.all([
+    withRetry(() => db.inventory.countByDifficulty(), { retries: 2, delayMs: 400 }),
+    withRetry(() => db.aiLogs.stats(), { retries: 2, delayMs: 400 }),
+    withRetry(() => db.aiLogs.list(20), { retries: 2, delayMs: 400 }),
     getOnlineUserEstimate(),
+    getDailyActivityStats(),
   ]);
+
+  const leaderboardSize = await withRetry(() => db.leaderboard.list(), { retries: 2, delayMs: 400 }).then(
+    (list) => list.length,
+  );
 
   return jsonResponse({
     success: true,
     dashboard: {
-      onlineUsers: onlineUsers || users.length,
+      onlineUsers: onlineUsers,
       inventoryCounts,
       aiStats,
       recentLogs: logs,
-      leaderboardSize: (await db.leaderboard.list()).length,
+      dailyActivity,
+      leaderboardSize,
       kvAdapter: process.env.KV_ADAPTER ?? 'memory',
       blobAdapter: process.env.BLOB_ADAPTER ?? 'local',
       dbAdapter: process.env.DB_ADAPTER ?? 'memory',

@@ -226,6 +226,43 @@ export interface TimelineEvent {
 }
 
 // ─── Module 11: 最终真相 ─────────────────────────────────────────────────────
+
+/**
+ * 动机可推导证据链——确保玩家有足够线索从三个层次独立推出动机。
+ *
+ * - discoveryClues  : 入口层，玩家调查场景/审讯时能发现的线索（引发怀疑）
+ * - verificationClues : 核实层，可与其他证据/记录交叉比对的线索（确认事实）
+ * - corroborationClues : 印证层，来自不同来源、独立指向同一结论的线索（闭环推理）
+ */
+export interface MotiveEvidenceChain {
+  /** 动机类型：财产 / 复仇 / 掩盖秘密 / 情感 / 权力 / 其他 */
+  motiveCategory: string;
+  /** 触发事件：为什么凶手在此时此刻必须动手（时间压力/催化剂） */
+  motiveTrigger: string;
+  /** 入口层：至少 2 条，来自物证或嫌疑人陈述中的矛盾 */
+  discoveryClues: Array<{
+    evidenceId: string;
+    description: string;
+    /** 玩家应如何发现此线索（场景调查/审讯追问/证据组合） */
+    howToFind: string;
+  }>;
+  /** 核实层：至少 1 条，可通过记录/时间戳/第三方比对验证 */
+  verificationClues: Array<{
+    evidenceId: string;
+    description: string;
+    /** 与哪个已有证据/事实形成比对 */
+    crossRef: string;
+  }>;
+  /** 印证层：至少 2 条，来自不同信源，独立指向动机结论 */
+  corroborationClues: Array<{
+    source: 'suspect' | 'victim_item' | 'third_party' | 'physical_evidence' | 'digital';
+    evidenceId: string;
+    description: string;
+    /** 该线索如何独立指向动机 */
+    logicLink: string;
+  }>;
+}
+
 export interface FinalTruth {
   killer: string;
   method: string;
@@ -235,6 +272,8 @@ export interface FinalTruth {
   twist?: string;              // 剧情反转点
   hiddenContext: string;       // 深层背景（玩家不易发现的信息）
   moralConclusion: string;     // 案件道德/哲学结论（1句话）
+  /** 动机三层证据链（保证玩家有完整推导路径） */
+  motiveEvidenceChain?: MotiveEvidenceChain;
 }
 
 // ─── Module 12: AI 评分标准 ─────────────────────────────────────────────────
@@ -342,6 +381,10 @@ export type UserRole = 'user' | 'admin';
 
 export interface UserRecord {
   _id: string;
+  /** 本地账号用户名（用于本地认证模式） */
+  username?: string;
+  /** 本地账号密码哈希（scrypt，格式：{salt}:{hash}） */
+  passwordHash?: string;
   nickname: string;
   avatar?: string;
   role: UserRole;
@@ -403,6 +446,7 @@ export interface SessionRecord {
     startTime: number;
     endTime?: number;
     score?: number;
+    flowStep?: string;
   };
   createdAt: number;
   updatedAt: number;
@@ -420,6 +464,9 @@ export interface HistoryRecord {
   createdAt: number;
   updatedAt: number;
 }
+
+/** 历史列表接口返回的精简字段（与 HistoryRecord 一致，用于显式投影） */
+export type HistoryListItem = HistoryRecord;
 
 export interface LeaderboardRecord {
   _id: string;
@@ -455,6 +502,37 @@ export interface GenerationJob {
   updatedAt: number;
 }
 
+export type RefillJobStage = 'pending' | 'generating' | 'images' | 'persisting' | 'ready' | 'failed';
+
+export interface RefillJob {
+  _id: string;
+  status: 'pending' | 'running' | 'ready' | 'failed';
+  stage: RefillJobStage;
+  difficulty: Difficulty;
+  total: number;
+  /** 当前正在生成的序号（0-based） */
+  current: number;
+  created: string[];
+  errors: string[];
+  error?: string;
+  inventoryCounts?: Record<string, number>;
+  message?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 预生成案例领取记录（同一用户对同一案件仅记录一次） */
+export interface ClaimRecord {
+  _id: string;
+  /** 来源库存 ID */
+  inventoryId: string;
+  /** 案件 ID */
+  caseId: string;
+  userId: string;
+  nickname: string;
+  claimedAt: number;
+}
+
 export interface AiLogRecord {
   _id: string;
   type: 'case' | 'interrogate' | 'evaluate' | 'image';
@@ -465,6 +543,16 @@ export interface AiLogRecord {
   completionTokens: number;
   totalTokens: number;
   durationMs: number;
+  createdAt: number;
+}
+
+/** 用户活跃记录：login/register 为审计明细，online 为当日首次在线（仅用于汇总） */
+export interface LoginAuditRecord {
+  _id: string;
+  userId: string;
+  username?: string;
+  nickname: string;
+  source: 'login' | 'register' | 'online';
   createdAt: number;
 }
 

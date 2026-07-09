@@ -29,7 +29,6 @@ const ENV_KEYS = [
   'BLOB_PUBLIC_BASE_URL',
   'EO_BLOB_UPLOAD_URL',
   'EO_BLOB_UPLOAD_TOKEN',
-  'ADMIN_SECRET',
 ] as const;
 
 const DEFAULTS: Record<string, string> = {
@@ -39,7 +38,7 @@ const DEFAULTS: Record<string, string> = {
   AI_EVALUATE_MODEL: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
   AI_IMAGE_MODEL: 'Kwai-Kolors/Kolors',
   TCB_REGION: 'ap-shanghai',
-  DB_ADAPTER: 'memory',
+  DB_ADAPTER: 'cloudbase',
   KV_ADAPTER: 'memory',
   BLOB_ADAPTER: 'local',
 };

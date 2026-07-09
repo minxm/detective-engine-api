@@ -69,5 +69,4 @@ jobs:
           BLOB_PUBLIC_BASE_URL: ${{ secrets.BLOB_PUBLIC_BASE_URL }}
           EO_BLOB_UPLOAD_URL: ${{ secrets.EO_BLOB_UPLOAD_URL }}
           EO_BLOB_UPLOAD_TOKEN: ${{ secrets.EO_BLOB_UPLOAD_TOKEN }}
-          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
         run: npx tsx scripts/deploy-scf.ts

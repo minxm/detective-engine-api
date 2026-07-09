@@ -1,32 +1,62 @@
 import type { CloudContext } from '../../src/router/index.js';
-import { jsonResponse, verifyAdminSecret } from '../../src/utils/index.js';
-import { isAdminRole } from '../../src/auth/roles.js';
-import { resolveAuthUser } from '../../src/auth/cloudbase.js';
-import { getDatabase } from '../../src/db/index.js';
-import { generateCaseWithAI } from '../../src/ai/index.js';
-import { enrichCaseWithBlobImages } from '../../src/services/image-service.js';
-import { caseDataToInventory, caseDataToRecord } from '../../src/services/case-service.js';
+import { jsonResponse } from '../../src/utils/index.js';
+import { requireAdminUser } from '../../src/auth/admin-guard.js';
+import {
+  getCachedRefillJob,
+  getRefillJobProgress,
+  getRefillStageLabel,
+  startRefillJob,
+} from '../../src/services/refill-job.js';
 import type { Difficulty } from '../../src/types/index.js';
 
 export async function handleInventoryRefill(ctx: CloudContext): Promise<Response> {
-  const authUser = await resolveAuthUser(ctx.headers);
-  if (!isAdminRole(authUser?.role) && !verifyAdminSecret(ctx.headers)) {
+  if (!(await requireAdminUser(ctx.headers))) {
     return jsonResponse({ success: false, error: '无权限' }, 403);
   }
 
   const body = (ctx.body ?? {}) as { difficulty?: Difficulty; count?: number };
   const difficulty = body.difficulty ?? 'medium';
-  const count = Math.min(body.count ?? 1, 5);
-  const db = getDatabase();
-  const created: string[] = [];
+  const count = Math.min(Math.max(body.count ?? 1, 1), 3);
 
-  for (let i = 0; i < count; i++) {
-    let caseData = await generateCaseWithAI(difficulty, authUser?.userId);
-    caseData = await enrichCaseWithBlobImages(caseData);
-    await db.cases.create(caseDataToRecord(caseData));
-    await db.inventory.add(caseDataToInventory(caseData));
-    created.push(caseData.id);
+  const job = await startRefillJob(difficulty, count);
+
+  return jsonResponse({
+    success: true,
+    refillJobId: job._id,
+    status: job.status,
+    stage: job.stage,
+    progress: getRefillJobProgress(job),
+    stageLabel: getRefillStageLabel(job.stage, job.current, job.total),
+    total: job.total,
+  });
+}
+
+export async function handleInventoryRefillStatus(ctx: CloudContext): Promise<Response> {
+  if (!(await requireAdminUser(ctx.headers))) {
+    return jsonResponse({ success: false, error: '无权限' }, 403);
   }
 
-  return jsonResponse({ success: true, created, inventoryCounts: await db.inventory.countByDifficulty() });
+  const jobId = ctx.query.jobId;
+  if (!jobId) return jsonResponse({ success: false, error: '缺少 jobId' }, 400);
+
+  const job = await getCachedRefillJob(jobId);
+  if (!job) return jsonResponse({ success: false, error: '任务不存在或已过期' }, 404);
+
+  const progress = getRefillJobProgress(job);
+  const stageLabel = getRefillStageLabel(job.stage, job.current, job.total);
+
+  return jsonResponse({
+    success: job.status !== 'failed' || job.created.length > 0,
+    status: job.status,
+    stage: job.stage,
+    progress,
+    stageLabel,
+    current: job.current,
+    total: job.total,
+    created: job.created,
+    errors: job.errors.length ? job.errors : undefined,
+    error: job.error,
+    message: job.message,
+    inventoryCounts: job.inventoryCounts,
+  });
 }

@@ -6,7 +6,7 @@ AI 推理侦探游戏后端 — EdgeOne Cloud Functions + 可替换存储层。
 
 ```
 浏览器 → /api/* → Cloud Functions
-                    ├── DatabaseAdapter (memory | mongodb)
+                    ├── DatabaseAdapter (memory | cloudbase | mongodb)
                     ├── KvAdapter (memory | edgeone)
                     ├── BlobAdapter (local | edgeone)
                     └── CloudBase Auth 验证
@@ -18,11 +18,33 @@ AI 推理侦探游戏后端 — EdgeOne Cloud Functions + 可替换存储层。
 
 | 环境变量 | 可选值 | 说明 |
 |---------|--------|------|
-| `DB_ADAPTER` | `memory`, `mongodb` | 业务数据库（推荐 MongoDB 生产） |
+| `DB_ADAPTER` | `memory`, `cloudbase`, `mongodb` | 业务数据库（生产推荐 `cloudbase`） |
 | `KV_ADAPTER` | `memory`, `edgeone` | 任务缓存、在线人数 |
 | `BLOB_ADAPTER` | `local`, `edgeone` | AI 图片 URL 存储（案件生成时必调生图并上传） |
 
-### MongoDB
+### CloudBase 文档型数据库（推荐）
+
+使用 TCB 内置文档库，无需独立 MongoDB：
+
+```env
+DB_ADAPTER=cloudbase
+TCB_ENV_ID=your-env-id
+TCB_SECRET_ID=...
+TCB_SECRET_KEY=...
+TCB_REGION=ap-shanghai
+```
+
+首次部署前在控制台或通过脚本创建集合：
+
+```bash
+npm run init:tcb-collections
+```
+
+需在 TCB 控制台创建以下 8 个集合（名称必须一致），权限建议 **仅管理端可读写**：
+
+`users` · `cases` · `sessions` · `history` · `leaderboard` · `inventory` · `ai_logs` · `claims` · `login_audits`
+
+### MongoDB（可选，自建实例）
 
 ```env
 DB_ADAPTER=mongodb
@@ -50,7 +72,14 @@ TCB_PUBLIC_ENV_ID=your-env-id   # 前端用
 | `user` | 普通用户（默认） |
 | `admin` | 管理员，可访问 `/admin` 与库存补货 |
 
-首次登录自动创建用户，默认 `role: user`。提升为管理员示例（MongoDB）：
+首次登录自动创建用户，默认 `role: user`。提升为管理员示例（CloudBase 控制台 → 文档型数据库 → `users` 集合）：
+
+```js
+// 在控制台编辑对应文档，将 role 改为 "admin"
+{ "role": "admin" }
+```
+
+MongoDB 模式下也可用：
 
 ```js
 db.users.updateOne({ _id: "用户ID" }, { $set: { role: "admin" } })
@@ -109,8 +138,8 @@ npm run dev
 | `AI_CHAT_MODEL` / `AI_CASE_MODEL` / `AI_EVALUATE_MODEL` / `AI_IMAGE_MODEL` | 同 `.env.example` |
 | `TCB_ENV_ID` / `TCB_PUBLIC_ENV_ID` / `TCB_REGION` | CloudBase |
 | `TCB_SECRET_ID` / `TCB_SECRET_KEY` | CloudBase 服务端密钥 |
-| `DB_ADAPTER` | 生产推荐 `mongodb`，测试可用 `memory` |
-| `MONGODB_URI` / `MONGODB_DB` | MongoDB 连接（如启用） |
+| `DB_ADAPTER` | 生产推荐 `cloudbase`，测试可用 `memory` |
+| `MONGODB_URI` / `MONGODB_DB` | 仅 `DB_ADAPTER=mongodb` 时需要 |
 | `KV_ADAPTER` / `BLOB_ADAPTER` | 可选，默认可填 `memory` / `local` |
 
 push 到 `main` 后 Actions 自动打包，并通过腾讯云 SDK 更新 **Web 函数**（含 `scf_bootstrap`，监听 9000 端口）。
@@ -127,7 +156,7 @@ npm run package:scf
 
 部署成功后访问根路径应返回 JSON（`service: detective-engine-api`），而不是 Hello World。
 
-> **注意**：SCF 上使用 `DB_ADAPTER=memory` 数据不持久，生产请用 MongoDB。
+> **注意**：SCF 上使用 `DB_ADAPTER=memory` 数据不持久，生产请用 `cloudbase` 或 `mongodb`。
 
 ## API 路由
 

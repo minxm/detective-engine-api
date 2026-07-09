@@ -1,6 +1,5 @@
 import type { CaseData, CaseRecord, InventoryRecord, Suspect, Evidence } from '../types/index.js';
 import { generateId, now } from '../utils/index.js';
-
 // ─── ID 规范化辅助函数 ────────────────────────────────────────────────────────
 
 function normalizeSuspectId(id: unknown, index: number): string {
@@ -123,18 +122,24 @@ export function normalizeCaseData(caseData: CaseData): CaseData {
 // ─── CaseRecord ↔ CaseData 转换 ───────────────────────────────────────────────
 
 export function caseRecordToCaseData(record: CaseRecord): CaseData {
+  const scene = record.scene ?? {
+    setting: '',
+    deathMethod: '',
+    sceneDescription: '',
+    sceneImageUrl: undefined,
+  };
   return normalizeCaseData({
     id: record._id,
-    title: record.title,
+    title: record.title ?? '未命名案件',
     difficulty: record.difficulty,
-    setting: record.scene.setting,
+    setting: scene.setting,
     victim: record.victim,
-    deathMethod: record.scene.deathMethod,
-    sceneDescription: record.scene.sceneDescription,
-    sceneImageUrl: record.scene.sceneImageUrl,
-    suspects: record.suspects,
-    evidence: record.evidence,
-    timeline: record.timeline,
+    deathMethod: scene.deathMethod,
+    sceneDescription: scene.sceneDescription,
+    sceneImageUrl: scene.sceneImageUrl,
+    suspects: record.suspects ?? [],
+    evidence: record.evidence ?? [],
+    timeline: record.timeline ?? [],
     truth: record.answer,
     redHerrings: record.redHerrings,
     createdAt: record.createdAt,
@@ -202,22 +207,27 @@ export function caseDataToInventory(caseData: CaseData): InventoryRecord {
 
 export async function updateLeaderboard(userId: string, displayName: string, score: number) {
   const { getDatabase } = await import('../db/index.js');
+  const { withRetry } = await import('../utils/retry.js');
   const db = getDatabase();
-  const existing = await db.leaderboard.findByUser(userId);
+  const existing = await withRetry(() => db.leaderboard.findByUser(userId), { retries: 3, delayMs: 500 });
   const casesCompleted = (existing?.casesCompleted ?? 0) + 1;
   const totalScore = (existing?.totalScore ?? 0) + score;
   const avgScore = Math.round(totalScore / casesCompleted);
   const perfectSolves = (existing?.perfectSolves ?? 0) + (score >= 95 ? 1 : 0);
 
-  await db.leaderboard.upsert({
-    _id: existing?._id ?? generateId(),
-    userId,
-    displayName,
-    avatarUrl: existing?.avatarUrl,
-    totalScore,
-    casesCompleted,
-    avgScore,
-    perfectSolves,
-    updatedAt: now(),
-  });
+  await withRetry(
+    () =>
+      db.leaderboard.upsert({
+        _id: existing?._id ?? generateId(),
+        userId,
+        displayName,
+        avatarUrl: existing?.avatarUrl,
+        totalScore,
+        casesCompleted,
+        avgScore,
+        perfectSolves,
+        updatedAt: now(),
+      }),
+    { retries: 3, delayMs: 500 },
+  );
 }

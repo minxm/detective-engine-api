@@ -1,17 +1,21 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { DatabaseAdapter } from './interface.js';
+import type { DatabaseAdapter, AiLogsListQuery, HistoryListQuery, InventoryListQuery, LoginAuditsListQuery } from './interface.js';
+import { paginateArray } from '../utils/pagination.js';
 import type {
   AiLogRecord,
   CaseRecord,
-  GenerationJob,
+  ClaimRecord,
+  HistoryListItem,
   HistoryRecord,
   InventoryRecord,
   LeaderboardRecord,
   SessionRecord,
   UserRecord,
+  LoginAuditRecord,
 } from '../types/index.js';
+import { toHistoryListItem } from '../services/history-list.js';
 
 type Store = {
   users: UserRecord[];
@@ -20,8 +24,9 @@ type Store = {
   history: HistoryRecord[];
   leaderboard: LeaderboardRecord[];
   inventory: InventoryRecord[];
-  jobs: GenerationJob[];
   aiLogs: AiLogRecord[];
+  claims: ClaimRecord[];
+  loginAudits: LoginAuditRecord[];
 };
 
 const DEFAULT_STORE: Store = {
@@ -31,8 +36,9 @@ const DEFAULT_STORE: Store = {
   history: [],
   leaderboard: [],
   inventory: [],
-  jobs: [],
   aiLogs: [],
+  claims: [],
+  loginAudits: [],
 };
 
 function clone<T>(value: T): T {
@@ -68,6 +74,11 @@ export class MemoryDatabase implements DatabaseAdapter {
     findById: async (id: string) => {
       await this.ensureLoaded();
       return this.store.users.find((u) => u._id === id) ?? null;
+    },
+    findByUsername: async (username: string) => {
+      await this.ensureLoaded();
+      const lower = username.trim().toLowerCase();
+      return this.store.users.find((u) => u.username?.toLowerCase() === lower) ?? null;
     },
     upsert: async (user: UserRecord) => {
       await this.ensureLoaded();
@@ -125,11 +136,30 @@ export class MemoryDatabase implements DatabaseAdapter {
 
   history = {
     listByUser: async (userId: string, limit = 50) => {
+      const result = await this.history.listPaginated(userId, { page: 1, limit });
+      return result.items;
+    },
+    countByUser: async (userId: string, status?: 'in_progress' | 'completed') => {
       await this.ensureLoaded();
-      return this.store.history
-        .filter((h) => h.userId === userId)
+      return this.store.history.filter(
+        (h) => h.userId === userId && (!status || h.status === status),
+      ).length;
+    },
+    listPaginated: async (userId: string, query: HistoryListQuery) => {
+      await this.ensureLoaded();
+      const page = Math.max(1, query.page ?? 1);
+      const limit = Math.min(50, Math.max(1, query.limit ?? 10));
+      const rows = this.store.history
+        .filter((h) => h.userId === userId && (!query.status || h.status === query.status))
         .sort((a, b) => b.updatedAt - a.updatedAt)
-        .slice(0, limit);
+        .map((row) => toHistoryListItem(row as unknown as Record<string, unknown>))
+        .filter((r): r is HistoryListItem => r != null);
+      return paginateArray(rows, page, limit);
+    },
+    findByUserAndCase: async (userId: string, caseId: string) => {
+      await this.ensureLoaded();
+      const row = this.store.history.find((h) => h.userId === userId && h.caseId === caseId);
+      return row ? toHistoryListItem(row as unknown as Record<string, unknown>) : null;
     },
     upsert: async (record: HistoryRecord) => {
       await this.ensureLoaded();
@@ -164,6 +194,7 @@ export class MemoryDatabase implements DatabaseAdapter {
 
   inventory = {
     claimAvailable: async (difficulty: string, userId?: string) => {
+      const claimedBy = userId || undefined;
       await this.ensureLoaded();
       const idx = this.store.inventory.findIndex(
         (item) => item.difficulty === difficulty && item.status === 'available'
@@ -171,9 +202,18 @@ export class MemoryDatabase implements DatabaseAdapter {
       if (idx < 0) return null;
       const item = this.store.inventory[idx];
       item.status = 'claimed';
-      item.claimedBy = userId;
+      item.claimedBy = claimedBy;
       await this.persist();
       return item;
+    },
+    pickAvailable: async (difficulty: string, excludeIds: string[] = []) => {
+      await this.ensureLoaded();
+      const excludeSet = new Set(excludeIds);
+      return (
+        this.store.inventory.find(
+          (item) => item.difficulty === difficulty && item.status === 'available' && !excludeSet.has(item._id)
+        ) ?? null
+      );
     },
     add: async (record: InventoryRecord) => {
       await this.ensureLoaded();
@@ -190,24 +230,50 @@ export class MemoryDatabase implements DatabaseAdapter {
       }
       return counts;
     },
+    countByCaseId: async (caseId: string) => {
+      await this.ensureLoaded();
+      return this.store.inventory.filter((i) => i.caseId === caseId).length;
+    },
     list: async (limit = 100) => {
       await this.ensureLoaded();
-      return this.store.inventory.slice(-limit);
+      return [...this.store.inventory].sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
+    },
+    listPaginated: async (query: InventoryListQuery) => {
+      await this.ensureLoaded();
+      const page = Math.max(1, query.page ?? 1);
+      const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+      let rows = [...this.store.inventory].sort((a, b) => b.createdAt - a.createdAt);
+      if (query.status) rows = rows.filter((r) => r.status === query.status);
+      if (query.difficulty) rows = rows.filter((r) => r.difficulty === query.difficulty);
+      return paginateArray(rows, page, limit);
     },
   };
 
-  jobs = {
-    findById: async (id: string) => {
+  claims = {
+    add: async (record: ClaimRecord) => {
       await this.ensureLoaded();
-      return this.store.jobs.find((j) => j._id === id) ?? null;
-    },
-    upsert: async (job: GenerationJob) => {
-      await this.ensureLoaded();
-      const idx = this.store.jobs.findIndex((j) => j._id === job._id);
-      if (idx >= 0) this.store.jobs[idx] = job;
-      else this.store.jobs.push(job);
+      this.store.claims.push(record);
       await this.persist();
-      return job;
+      return record;
+    },
+    countByCaseId: async (caseId: string) => {
+      await this.ensureLoaded();
+      return this.store.claims.filter((c) => c.caseId === caseId).length;
+    },
+    listByCaseId: async (caseId: string, page: number, limit: number) => {
+      await this.ensureLoaded();
+      const rows = [...this.store.claims]
+        .filter((c) => c.caseId === caseId)
+        .sort((a, b) => b.claimedAt - a.claimedAt);
+      return paginateArray(rows, page, limit);
+    },
+    listClaimedCaseIdsByUser: async (userId: string) => {
+      await this.ensureLoaded();
+      return [...new Set(this.store.claims.filter((c) => c.userId === userId).map((c) => c.caseId))];
+    },
+    hasUserClaimedCase: async (userId: string, caseId: string) => {
+      await this.ensureLoaded();
+      return this.store.claims.some((c) => c.userId === userId && c.caseId === caseId);
     },
   };
 
@@ -222,6 +288,14 @@ export class MemoryDatabase implements DatabaseAdapter {
       await this.ensureLoaded();
       return [...this.store.aiLogs].sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
     },
+    listPaginated: async (query: AiLogsListQuery) => {
+      await this.ensureLoaded();
+      const page = Math.max(1, query.page ?? 1);
+      const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+      let rows = [...this.store.aiLogs].sort((a, b) => b.createdAt - a.createdAt);
+      if (query.type) rows = rows.filter((l) => l.type === query.type);
+      return paginateArray(rows, page, limit);
+    },
     stats: async () => {
       await this.ensureLoaded();
       return this.store.aiLogs.reduce(
@@ -231,6 +305,65 @@ export class MemoryDatabase implements DatabaseAdapter {
         }),
         { totalCalls: 0, totalTokens: 0 }
       );
+    },
+    deleteById: async (id: string) => {
+      await this.ensureLoaded();
+      const before = this.store.aiLogs.length;
+      this.store.aiLogs = this.store.aiLogs.filter((l) => l._id !== id);
+      if (this.store.aiLogs.length === before) return false;
+      await this.persist();
+      return true;
+    },
+    deleteMany: async (filter: { type?: AiLogRecord['type']; olderThanMs?: number }) => {
+      await this.ensureLoaded();
+      const cutoff = filter.olderThanMs ? Date.now() - filter.olderThanMs : 0;
+      const before = this.store.aiLogs.length;
+      this.store.aiLogs = this.store.aiLogs.filter((log) => {
+        if (filter.type && log.type !== filter.type) return true;
+        if (cutoff && log.createdAt >= cutoff) return true;
+        return false;
+      });
+      const removed = before - this.store.aiLogs.length;
+      if (removed > 0) await this.persist();
+      return removed;
+    },
+  };
+
+  loginAudits = {
+    add: async (record: LoginAuditRecord) => {
+      await this.ensureLoaded();
+      this.store.loginAudits.push(record);
+      await this.persist();
+      return record;
+    },
+    listPaginated: async (query: LoginAuditsListQuery) => {
+      await this.ensureLoaded();
+      const page = Math.max(1, query.page ?? 1);
+      const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+      let rows = [...this.store.loginAudits].sort((a, b) => b.createdAt - a.createdAt);
+      if (query.source) rows = rows.filter((r) => r.source === query.source);
+      else if (query.auditOnly) rows = rows.filter((r) => r.source === 'login' || r.source === 'register');
+      return paginateArray(rows, page, limit);
+    },
+    listSince: async (sinceMs: number) => {
+      await this.ensureLoaded();
+      return this.store.loginAudits
+        .filter((r) => r.createdAt >= sinceMs)
+        .sort((a, b) => b.createdAt - a.createdAt);
+    },
+    hasToday: async (userId: string, source: LoginAuditRecord['source'], sinceMs: number) => {
+      await this.ensureLoaded();
+      return this.store.loginAudits.some(
+        (r) => r.userId === userId && r.source === source && r.createdAt >= sinceMs,
+      );
+    },
+    deleteOlderThan: async (cutoffMs: number) => {
+      await this.ensureLoaded();
+      const before = this.store.loginAudits.length;
+      this.store.loginAudits = this.store.loginAudits.filter((r) => r.createdAt >= cutoffMs);
+      const removed = before - this.store.loginAudits.length;
+      if (removed > 0) await this.persist();
+      return removed;
     },
   };
 }

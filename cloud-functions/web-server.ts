@@ -1,6 +1,8 @@
 import http from 'node:http';
 import { URL } from 'node:url';
+import 'dotenv/config';
 import { handleRequest, readJsonBody, writeWebResponse } from '../src/router/index.js';
+import { warmupDatabase } from '../src/db/warmup.js';
 
 const PORT = Number(process.env.PORT ?? 9000);
 const HOST = '0.0.0.0';
@@ -38,4 +40,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[detective-engine-api] web server listening on ${HOST}:${PORT}`);
+  void warmupDatabase();
 });

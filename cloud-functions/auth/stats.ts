@@ -5,7 +5,10 @@ import { getDatabase } from '../../src/db/index.js';
 
 export async function handleUserStats(ctx: CloudContext): Promise<Response> {
   const user = await resolveAuthUser(ctx.headers);
-  const userId = user?.userId ?? 'guest';
+  const userId = user?.userId;
+  if (!userId) {
+    return jsonResponse({ success: false, error: '未登录' }, 401);
+  }
   const db = getDatabase();
   const history = await db.history.listByUser(userId, 200);
   const completed = history.filter((h) => h.status === 'completed');

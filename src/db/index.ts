@@ -1,4 +1,5 @@
 import type { DatabaseAdapter } from './interface.js';
+import { CloudBaseDbAdapter } from './cloudbase.js';
 import { MemoryDatabase } from './memory.js';
 import { MongoDbAdapter } from './mongodb.js';
 
@@ -9,6 +10,9 @@ export function getDatabase(): DatabaseAdapter {
 
   const adapter = process.env.DB_ADAPTER ?? 'memory';
   switch (adapter) {
+    case 'cloudbase':
+      dbInstance = new CloudBaseDbAdapter();
+      break;
     case 'mongodb': {
       const uri = process.env.MONGODB_URI;
       if (!uri) throw new Error('DB_ADAPTER=mongodb 但未配置 MONGODB_URI');

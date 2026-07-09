@@ -59,10 +59,3 @@ export function corsPreflightResponse(): Response {
     },
   });
 }
-
-export function verifyAdminSecret(headers: Record<string, string | undefined>): boolean {
-  const secret = process.env.ADMIN_SECRET;
-  if (!secret) return false;
-  const provided = headers['x-admin-secret'] ?? headers['X-Admin-Secret'];
-  return provided === secret;
-}
