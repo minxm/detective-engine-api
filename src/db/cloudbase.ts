@@ -14,6 +14,7 @@ import type {
   UserRecord,
   LoginAuditRecord,
   OnlinePresenceRecord,
+  RefillJob,
 } from '../types/index.js';
 import {
   HISTORY_LIST_FIELD_PROJECTION,
@@ -35,6 +36,7 @@ const COLLECTIONS = {
   loginAudits: 'login_audits',
   generationJobs: 'generation_jobs',
   onlinePresence: 'online_presence',
+  refillJobs: 'refill_jobs',
 } as const;
 
 function asDoc<T extends { _id: string }>(data: T | T[] | undefined | null): T | null {
@@ -512,5 +514,13 @@ export class CloudBaseDbAdapter implements DatabaseAdapter {
       }
       return paginateArray(rows, page, limit);
     },
+  };
+
+  refillJobs = {
+    findById: async (id: string) => {
+      const res = await this.collection(COLLECTIONS.refillJobs).doc(id).get();
+      return asDoc<RefillJob>(res.data);
+    },
+    upsert: async (job: RefillJob) => this.setRecord(COLLECTIONS.refillJobs, job),
   };
 }

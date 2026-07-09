@@ -16,6 +16,7 @@ import type {
   LoginAuditRecord,
   GenerationJob,
   OnlinePresenceRecord,
+  RefillJob,
 } from '../types/index.js';
 import { toHistoryListItem } from '../services/history-list.js';
 
@@ -31,6 +32,7 @@ const COLLECTIONS = {
   loginAudits: 'login_audits',
   generationJobs: 'generation_jobs',
   onlinePresence: 'online_presence',
+  refillJobs: 'refill_jobs',
 } as const;
 
 export class MongoDbAdapter implements DatabaseAdapter {
@@ -410,6 +412,18 @@ export class MongoDbAdapter implements DatabaseAdapter {
         col.countDocuments(filter),
       ]);
       return buildPaginatedResult(items, total, page, limit);
+    },
+  };
+
+  refillJobs = {
+    findById: async (id: string) => {
+      const col = await this.collection<RefillJob>(COLLECTIONS.refillJobs);
+      return col.findOne({ _id: id });
+    },
+    upsert: async (job: RefillJob) => {
+      const col = await this.collection<RefillJob>(COLLECTIONS.refillJobs);
+      await col.updateOne({ _id: job._id }, { $set: job }, { upsert: true });
+      return job;
     },
   };
 }

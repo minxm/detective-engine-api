@@ -14,6 +14,7 @@ import type {
   LeaderboardRecord,
   LoginAuditRecord,
   OnlinePresenceRecord,
+  RefillJob,
   SessionRecord,
   UserRecord,
 } from '../types/index.js';
@@ -31,6 +32,7 @@ type Store = {
   loginAudits: LoginAuditRecord[];
   generationJobs: GenerationJob[];
   onlinePresence: OnlinePresenceRecord[];
+  refillJobs: RefillJob[];
 };
 
 const DEFAULT_STORE: Store = {
@@ -45,6 +47,7 @@ const DEFAULT_STORE: Store = {
   loginAudits: [],
   generationJobs: [],
   onlinePresence: [],
+  refillJobs: [],
 };
 
 function clone<T>(value: T): T {
@@ -403,6 +406,21 @@ export class MemoryDatabase implements DatabaseAdapter {
         .filter((r) => r.lastSeen >= sinceMs)
         .sort((a, b) => b.lastSeen - a.lastSeen);
       return paginateArray(rows, page, limit);
+    },
+  };
+
+  refillJobs = {
+    findById: async (id: string) => {
+      await this.ensureLoaded();
+      return this.store.refillJobs.find((j) => j._id === id) ?? null;
+    },
+    upsert: async (job: RefillJob) => {
+      await this.ensureLoaded();
+      const idx = this.store.refillJobs.findIndex((j) => j._id === job._id);
+      if (idx >= 0) this.store.refillJobs[idx] = job;
+      else this.store.refillJobs.push(job);
+      await this.persist();
+      return job;
     },
   };
 }

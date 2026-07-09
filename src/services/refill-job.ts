@@ -1,10 +1,7 @@
-import { getKv } from '../kv/index.js';
 import { generateId, now } from '../utils/index.js';
 import { getDatabase } from '../db/index.js';
 import { generateAndPersistCase } from './case-generation.js';
 import type { Difficulty, RefillJob, RefillJobStage } from '../types/index.js';
-
-const REFILL_PREFIX = 'refill:';
 
 const CASE_STAGE_RATIO: Record<RefillJobStage, number> = {
   pending: 0,
@@ -43,19 +40,11 @@ export function getRefillStageLabel(stage: RefillJobStage, current: number, tota
 }
 
 async function cacheRefillJob(job: RefillJob): Promise<void> {
-  const kv = getKv();
-  await kv.put(`${REFILL_PREFIX}${job._id}`, JSON.stringify(job), 3600);
+  await getDatabase().refillJobs.upsert(job);
 }
 
 export async function getCachedRefillJob(jobId: string): Promise<RefillJob | null> {
-  const kv = getKv();
-  const raw = await kv.get(`${REFILL_PREFIX}${jobId}`);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as RefillJob;
-  } catch {
-    return null;
-  }
+  return getDatabase().refillJobs.findById(jobId);
 }
 
 async function patchRefillJob(jobId: string, patch: Partial<RefillJob>): Promise<RefillJob | null> {
@@ -100,7 +89,7 @@ async function runRefillJob(jobId: string, difficulty: Difficulty, count: number
         undefined,
         async (stage) => {
           await patchRefillJob(jobId, { stage, current: i });
-        }
+        },
       );
 
       const job = await getCachedRefillJob(jobId);

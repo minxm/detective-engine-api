@@ -11,6 +11,7 @@ import type {
   LoginAuditRecord,
   GenerationJob,
   OnlinePresenceRecord,
+  RefillJob,
 } from '../types/index.js';
 import type { PaginatedResult } from '../utils/pagination.js';
 
@@ -110,6 +111,10 @@ export interface DatabaseAdapter {
   onlinePresence: {
     upsert(record: OnlinePresenceRecord): Promise<OnlinePresenceRecord>;
     listActive(sinceMs: number, page: number, limit: number): Promise<PaginatedResult<OnlinePresenceRecord>>;
+  };
+  refillJobs: {
+    findById(id: string): Promise<RefillJob | null>;
+    upsert(job: RefillJob): Promise<RefillJob>;
   };
 }
 
