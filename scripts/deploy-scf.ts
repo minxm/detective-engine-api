@@ -49,8 +49,17 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function resolveDbAdapter(): string {
+  const raw = process.env.DB_ADAPTER?.trim();
+  if (raw === 'mongodb' && !process.env.MONGODB_URI?.trim()) {
+    console.warn('[deploy-scf] DB_ADAPTER=mongodb 但未配置 MONGODB_URI，改用 cloudbase');
+    return 'cloudbase';
+  }
+  return raw || DEFAULTS.DB_ADAPTER;
+}
+
 function validateDeployEnvironment() {
-  const dbAdapter = process.env.DB_ADAPTER?.trim() || DEFAULTS.DB_ADAPTER;
+  const dbAdapter = resolveDbAdapter();
   if (dbAdapter === 'cloudbase') {
     requireEnv('TCB_ENV_ID');
     requireEnv('TCB_SECRET_ID');
@@ -62,7 +71,11 @@ function validateDeployEnvironment() {
 }
 
 function buildEnvironment() {
+  const dbAdapter = resolveDbAdapter();
   const variables = ENV_KEYS.flatMap((key) => {
+    if (key === 'DB_ADAPTER') {
+      return [{ Key: key, Value: dbAdapter }];
+    }
     const value = process.env[key]?.trim() || DEFAULTS[key];
     return value ? [{ Key: key, Value: value }] : [];
   });
