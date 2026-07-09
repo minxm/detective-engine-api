@@ -3,7 +3,6 @@ import { jsonResponse } from '../../src/utils/index.js';
 import { ensureUserRecord } from '../../src/auth/roles.js';
 import { resolveAuthUser, getAuthConfig } from '../../src/auth/cloudbase.js';
 import { heartbeatOnline } from '../../src/services/job-cache.js';
-import { recordOnlinePresence } from '../../src/services/login-audit.js';
 
 export async function handleAuthConfig(_ctx: CloudContext): Promise<Response> {
   return jsonResponse({ success: true, auth: getAuthConfig() });
@@ -18,7 +17,6 @@ export async function handleAuthHeartbeat(ctx: CloudContext): Promise<Response> 
     nickname: user.nickname,
     role: user.role,
   });
-  void recordOnlinePresence(user.userId, user.nickname);
   return jsonResponse({ success: true });
 }
 

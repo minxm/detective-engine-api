@@ -555,13 +555,13 @@ export interface OnlinePresenceRecord {
   lastSeen: number;
 }
 
-/** 用户活跃记录：login/register 为审计明细，online 为当日首次在线（仅用于汇总） */
+/** 用户登录/注册审计记录 */
 export interface LoginAuditRecord {
   _id: string;
   userId: string;
   username?: string;
   nickname: string;
-  source: 'login' | 'register' | 'online';
+  source: 'login' | 'register';
   createdAt: number;
 }
 

@@ -38,7 +38,7 @@ export type LoginAuditsListQuery = {
   page?: number;
   limit?: number;
   source?: LoginAuditRecord['source'];
-  /** 为 true 时仅返回 login/register，排除 online */
+  /** 为 true 时仅返回 login/register（兼容历史 online 记录） */
   auditOnly?: boolean;
 };
 
