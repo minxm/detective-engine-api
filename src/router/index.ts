@@ -136,7 +136,28 @@ export async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 export function writeWebResponse(res: ServerResponse, response: Response) {
   res.statusCode = response.status;
   response.headers.forEach((value, key) => res.setHeader(key, value));
-  void response.text().then((text) => {
-    res.end(text);
-  });
+
+  if (!response.body) {
+    res.end();
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const pump = async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          res.end();
+          return;
+        }
+        res.write(Buffer.from(value));
+      }
+    } catch (error) {
+      console.error('[writeWebResponse] stream error:', error);
+      if (!res.writableEnded) res.end();
+    }
+  };
+
+  void pump();
 }

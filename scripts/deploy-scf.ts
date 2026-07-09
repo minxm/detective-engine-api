@@ -49,6 +49,18 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function validateDeployEnvironment() {
+  const dbAdapter = process.env.DB_ADAPTER?.trim() || DEFAULTS.DB_ADAPTER;
+  if (dbAdapter === 'cloudbase') {
+    requireEnv('TCB_ENV_ID');
+    requireEnv('TCB_SECRET_ID');
+    requireEnv('TCB_SECRET_KEY');
+  }
+  if (dbAdapter === 'mongodb') {
+    requireEnv('MONGODB_URI');
+  }
+}
+
 function buildEnvironment() {
   const variables = ENV_KEYS.flatMap((key) => {
     const value = process.env[key]?.trim() || DEFAULTS[key];
@@ -119,6 +131,7 @@ async function main() {
   const region = requireEnv('SCF_REGION');
   const functionName = requireEnv('SCF_FUNCTION_NAME');
   const namespace = process.env.SCF_NAMESPACE?.trim() || 'default';
+  validateDeployEnvironment();
 
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const zipPath = path.join(root, 'function.zip');
@@ -155,7 +168,7 @@ async function main() {
       FunctionName: functionName,
       Namespace: namespace,
       Timeout: 120,
-      MemorySize: 512,
+      MemorySize: 1024,
       Environment: buildEnvironment(),
     })
   );

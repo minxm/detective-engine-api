@@ -3,8 +3,8 @@ import { withRetry } from '../utils/retry.js';
 
 /** 服务启动时预热数据库连接，避免首请求 TLS 握手失败 */
 export async function warmupDatabase(): Promise<void> {
-  const db = getDatabase();
   try {
+    const db = getDatabase();
     await withRetry(
       async () => {
         await db.users.list(1);
