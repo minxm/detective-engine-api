@@ -10,6 +10,7 @@ import type {
   AiLogRecord,
   LoginAuditRecord,
 } from '../types/index.js';
+import type { GenerationJob } from '../types/index.js';
 import type { PaginatedResult } from '../utils/pagination.js';
 
 export type InventoryListQuery = {
@@ -100,6 +101,10 @@ export interface DatabaseAdapter {
     listSince(sinceMs: number): Promise<LoginAuditRecord[]>;
     hasToday(userId: string, source: LoginAuditRecord['source'], sinceMs: number): Promise<boolean>;
     deleteOlderThan(cutoffMs: number): Promise<number>;
+  };
+  generationJobs: {
+    findById(id: string): Promise<GenerationJob | null>;
+    upsert(job: GenerationJob): Promise<GenerationJob>;
   };
 }
 

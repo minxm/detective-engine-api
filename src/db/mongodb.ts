@@ -14,6 +14,7 @@ import type {
   SessionRecord,
   UserRecord,
   LoginAuditRecord,
+  GenerationJob,
 } from '../types/index.js';
 import { toHistoryListItem } from '../services/history-list.js';
 
@@ -27,6 +28,7 @@ const COLLECTIONS = {
   aiLogs: 'ai_logs',
   claims: 'claims',
   loginAudits: 'login_audits',
+  generationJobs: 'generation_jobs',
 } as const;
 
 export class MongoDbAdapter implements DatabaseAdapter {
@@ -376,6 +378,18 @@ export class MongoDbAdapter implements DatabaseAdapter {
       const col = await this.collection<LoginAuditRecord>(COLLECTIONS.loginAudits);
       const res = await col.deleteMany({ createdAt: { $lt: cutoffMs } });
       return res.deletedCount;
+    },
+  };
+
+  generationJobs = {
+    findById: async (id: string) => {
+      const col = await this.collection<GenerationJob>(COLLECTIONS.generationJobs);
+      return col.findOne({ _id: id });
+    },
+    upsert: async (job: GenerationJob) => {
+      const col = await this.collection<GenerationJob>(COLLECTIONS.generationJobs);
+      await col.updateOne({ _id: job._id }, { $set: job }, { upsert: true });
+      return job;
     },
   };
 }

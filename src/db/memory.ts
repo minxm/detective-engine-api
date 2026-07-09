@@ -7,13 +7,14 @@ import type {
   AiLogRecord,
   CaseRecord,
   ClaimRecord,
+  GenerationJob,
   HistoryListItem,
   HistoryRecord,
   InventoryRecord,
   LeaderboardRecord,
+  LoginAuditRecord,
   SessionRecord,
   UserRecord,
-  LoginAuditRecord,
 } from '../types/index.js';
 import { toHistoryListItem } from '../services/history-list.js';
 
@@ -27,6 +28,7 @@ type Store = {
   aiLogs: AiLogRecord[];
   claims: ClaimRecord[];
   loginAudits: LoginAuditRecord[];
+  generationJobs: GenerationJob[];
 };
 
 const DEFAULT_STORE: Store = {
@@ -39,6 +41,7 @@ const DEFAULT_STORE: Store = {
   aiLogs: [],
   claims: [],
   loginAudits: [],
+  generationJobs: [],
 };
 
 function clone<T>(value: T): T {
@@ -364,6 +367,21 @@ export class MemoryDatabase implements DatabaseAdapter {
       const removed = before - this.store.loginAudits.length;
       if (removed > 0) await this.persist();
       return removed;
+    },
+  };
+
+  generationJobs = {
+    findById: async (id: string) => {
+      await this.ensureLoaded();
+      return this.store.generationJobs.find((j) => j._id === id) ?? null;
+    },
+    upsert: async (job: GenerationJob) => {
+      await this.ensureLoaded();
+      const idx = this.store.generationJobs.findIndex((j) => j._id === job._id);
+      if (idx >= 0) this.store.generationJobs[idx] = job;
+      else this.store.generationJobs.push(job);
+      await this.persist();
+      return job;
     },
   };
 }

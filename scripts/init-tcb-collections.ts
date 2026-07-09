@@ -1,5 +1,5 @@
 /**
- * 在 TCB 内置文档库中创建项目所需的 9 个集合，并删除已废弃集合。
+ * 在 TCB 内置文档库中创建项目所需的 10 个集合，并删除已废弃集合。
  * 用法：DB_ADAPTER=cloudbase tsx scripts/init-tcb-collections.ts
  */
 import 'dotenv/config';
@@ -17,6 +17,7 @@ const COLLECTIONS = [
   'ai_logs',
   'claims',
   'login_audits',
+  'generation_jobs',
 ] as const;
 
 async function main() {

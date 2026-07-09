@@ -6,6 +6,7 @@ import type {
   CaseRecord,
   ClaimRecord,
   Difficulty,
+  GenerationJob,
   HistoryRecord,
   InventoryRecord,
   LeaderboardRecord,
@@ -31,6 +32,7 @@ const COLLECTIONS = {
   aiLogs: 'ai_logs',
   claims: 'claims',
   loginAudits: 'login_audits',
+  generationJobs: 'generation_jobs',
 } as const;
 
 function asDoc<T extends { _id: string }>(data: T | T[] | undefined | null): T | null {
@@ -482,5 +484,13 @@ export class CloudBaseDbAdapter implements DatabaseAdapter {
       }
       return removed;
     },
+  };
+
+  generationJobs = {
+    findById: async (id: string) => {
+      const res = await this.collection(COLLECTIONS.generationJobs).doc(id).get();
+      return asDoc<GenerationJob>(res.data);
+    },
+    upsert: async (job: GenerationJob) => this.setRecord(COLLECTIONS.generationJobs, job),
   };
 }

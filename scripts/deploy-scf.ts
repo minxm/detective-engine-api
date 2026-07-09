@@ -180,7 +180,7 @@ async function main() {
     client.UpdateFunctionConfiguration({
       FunctionName: functionName,
       Namespace: namespace,
-      Timeout: 120,
+      Timeout: 600,
       MemorySize: 1024,
       Environment: buildEnvironment(),
     })

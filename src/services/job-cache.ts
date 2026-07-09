@@ -1,9 +1,8 @@
-import { getKv } from '../kv/index.js';
+import { getDatabase } from '../db/index.js';
 import type { GenerationJob, UserRole } from '../types/index.js';
 import { buildPaginatedResult } from '../utils/pagination.js';
-import { getDatabase } from '../db/index.js';
+import { getKv } from '../kv/index.js';
 
-const JOB_PREFIX = 'job:';
 const ONLINE_REGISTRY_KEY = 'online:registry';
 const ONLINE_TTL = 120;
 
@@ -15,19 +14,11 @@ export type OnlineUserEntry = {
 };
 
 export async function cacheJob(job: GenerationJob): Promise<void> {
-  const kv = getKv();
-  await kv.put(`${JOB_PREFIX}${job._id}`, JSON.stringify(job), 3600);
+  await getDatabase().generationJobs.upsert(job);
 }
 
 export async function getCachedJob(jobId: string): Promise<GenerationJob | null> {
-  const kv = getKv();
-  const raw = await kv.get(`${JOB_PREFIX}${jobId}`);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as GenerationJob;
-  } catch {
-    return null;
-  }
+  return getDatabase().generationJobs.findById(jobId);
 }
 
 async function readRegistry(): Promise<string[]> {
