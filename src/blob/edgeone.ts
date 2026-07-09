@@ -41,10 +41,16 @@ export class EdgeOneBlobAdapter implements BlobAdapter {
           body: data,
         });
         if (res.ok) return this.getPublicUrl(key);
-        console.warn('[Blob] EdgeOne upload failed, fallback to local:', res.status);
+        throw new Error(`EdgeOne Blob 上传失败 (${res.status})`);
       } catch (error) {
-        console.warn('[Blob] EdgeOne upload error, fallback to local:', (error as Error).message);
+        const message = (error as Error).message;
+        if (process.env.SCF_NAMESPACE || process.env.TENCENTCLOUD_RUNENV) {
+          throw new Error(`EdgeOne Blob 上传失败（SCF 无法写入本地）：${message}`);
+        }
+        console.warn('[Blob] EdgeOne upload error, fallback to local:', message);
       }
+    } else if (process.env.SCF_NAMESPACE || process.env.TENCENTCLOUD_RUNENV) {
+      throw new Error('SCF 环境需配置 EO_BLOB_UPLOAD_URL 或改用 BLOB_ADAPTER=cloudbase');
     }
 
     const filePath = path.join(this.fallbackDir, key);

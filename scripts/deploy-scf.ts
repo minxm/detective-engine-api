@@ -40,7 +40,7 @@ const DEFAULTS: Record<string, string> = {
   TCB_REGION: 'ap-shanghai',
   DB_ADAPTER: 'cloudbase',
   KV_ADAPTER: 'memory',
-  BLOB_ADAPTER: 'local',
+  BLOB_ADAPTER: 'cloudbase',
 };
 
 function requireEnv(name: string): string {
@@ -58,6 +58,17 @@ function resolveDbAdapter(): string {
   return raw || DEFAULTS.DB_ADAPTER;
 }
 
+function resolveBlobAdapter(): string {
+  const raw = process.env.BLOB_ADAPTER?.trim();
+  if (raw === 'local' && resolveDbAdapter() === 'cloudbase') {
+    console.warn('[deploy-scf] BLOB_ADAPTER=local 在 CloudBase 生产环境不适用，改用 cloudbase');
+    return 'cloudbase';
+  }
+  if (raw) return raw;
+  if (resolveDbAdapter() === 'cloudbase') return 'cloudbase';
+  return DEFAULTS.BLOB_ADAPTER;
+}
+
 function validateDeployEnvironment() {
   const dbAdapter = resolveDbAdapter();
   if (dbAdapter === 'cloudbase') {
@@ -68,13 +79,21 @@ function validateDeployEnvironment() {
   if (dbAdapter === 'mongodb') {
     requireEnv('MONGODB_URI');
   }
+  const blobAdapter = resolveBlobAdapter();
+  if (blobAdapter === 'local') {
+    throw new Error('SCF 部署不能使用 BLOB_ADAPTER=local，请使用 cloudbase 或 edgeone');
+  }
 }
 
 function buildEnvironment() {
   const dbAdapter = resolveDbAdapter();
+  const blobAdapter = resolveBlobAdapter();
   const variables = ENV_KEYS.flatMap((key) => {
     if (key === 'DB_ADAPTER') {
       return [{ Key: key, Value: dbAdapter }];
+    }
+    if (key === 'BLOB_ADAPTER') {
+      return [{ Key: key, Value: blobAdapter }];
     }
     const value = process.env[key]?.trim() || DEFAULTS[key];
     return value ? [{ Key: key, Value: value }] : [];

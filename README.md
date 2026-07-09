@@ -20,7 +20,7 @@ AI 推理侦探游戏后端 — EdgeOne Cloud Functions + 可替换存储层。
 |---------|--------|------|
 | `DB_ADAPTER` | `memory`, `cloudbase`, `mongodb` | 业务数据库（生产推荐 `cloudbase`） |
 | `KV_ADAPTER` | `memory`, `edgeone` | 任务缓存、在线人数 |
-| `BLOB_ADAPTER` | `local`, `edgeone` | AI 图片 URL 存储（案件生成时必调生图并上传） |
+| `BLOB_ADAPTER` | `local`, `cloudbase`, `edgeone` | AI 图片存储（SCF/CloudBase 生产推荐 `cloudbase`） |
 
 ### CloudBase 文档型数据库（推荐）
 
