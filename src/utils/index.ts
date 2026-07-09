@@ -37,14 +37,35 @@ export function parseAuthUserId(headers: Record<string, string | undefined>): st
   return token;
 }
 
+export const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Max-Age': '86400',
+};
+
+export function applyCorsHeaders(headers: Headers): Headers {
+  const next = new Headers(headers);
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    next.set(key, value);
+  }
+  return next;
+}
+
+export function withCors(response: Response): Response {
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: applyCorsHeaders(response.headers),
+  });
+}
+
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      ...CORS_HEADERS,
     },
   });
 }
@@ -52,10 +73,6 @@ export function jsonResponse(body: unknown, status = 200): Response {
 export function corsPreflightResponse(): Response {
   return new Response(null, {
     status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    },
+    headers: CORS_HEADERS,
   });
 }

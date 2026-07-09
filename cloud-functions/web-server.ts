@@ -2,12 +2,19 @@ import http from 'node:http';
 import { URL } from 'node:url';
 import 'dotenv/config';
 import { handleRequest, readJsonBody, writeWebResponse } from '../src/router/index.js';
+import { CORS_HEADERS } from '../src/utils/index.js';
 import { warmupDatabase } from '../src/db/warmup.js';
 
 const PORT = Number(process.env.PORT ?? 9000);
 const HOST = '0.0.0.0';
 
 const server = http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS_HEADERS);
+    res.end();
+    return;
+  }
+
   try {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
@@ -32,8 +39,7 @@ const server = http.createServer(async (req, res) => {
 
     writeWebResponse(res, response);
   } catch (error) {
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
+    res.writeHead(500, { 'Content-Type': 'application/json', ...CORS_HEADERS });
     res.end(JSON.stringify({ success: false, error: (error as Error).message }));
   }
 });

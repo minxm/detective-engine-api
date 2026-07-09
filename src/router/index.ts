@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { corsPreflightResponse, jsonResponse } from '../utils/index.js';
+import { corsPreflightResponse, jsonResponse, withCors } from '../utils/index.js';
 import { handleCaseCreate } from '../../cloud-functions/case/create.js';
 import { handleCaseStatus } from '../../cloud-functions/case/status.js';
 import { handleCaseGet } from '../../cloud-functions/case/get.js';
@@ -114,7 +114,12 @@ export async function handleRequest(ctx: CloudContext): Promise<Response> {
   }
 
   ctx.query = { ...ctx.query, ...matched.params };
-  return matched.handler(ctx);
+  try {
+    return withCors(await matched.handler(ctx));
+  } catch (error) {
+    console.error('[router] handler failed:', error);
+    return jsonResponse({ success: false, error: (error as Error).message || '服务器错误' }, 500);
+  }
 }
 
 export async function readJsonBody(req: IncomingMessage): Promise<unknown> {
