@@ -15,6 +15,7 @@ import type {
   UserRecord,
   LoginAuditRecord,
   GenerationJob,
+  OnlinePresenceRecord,
 } from '../types/index.js';
 import { toHistoryListItem } from '../services/history-list.js';
 
@@ -29,6 +30,7 @@ const COLLECTIONS = {
   claims: 'claims',
   loginAudits: 'login_audits',
   generationJobs: 'generation_jobs',
+  onlinePresence: 'online_presence',
 } as const;
 
 export class MongoDbAdapter implements DatabaseAdapter {
@@ -390,6 +392,24 @@ export class MongoDbAdapter implements DatabaseAdapter {
       const col = await this.collection<GenerationJob>(COLLECTIONS.generationJobs);
       await col.updateOne({ _id: job._id }, { $set: job }, { upsert: true });
       return job;
+    },
+  };
+
+  onlinePresence = {
+    upsert: async (record: OnlinePresenceRecord) => {
+      const col = await this.collection<OnlinePresenceRecord>(COLLECTIONS.onlinePresence);
+      await col.updateOne({ _id: record._id }, { $set: record }, { upsert: true });
+      return record;
+    },
+    listActive: async (sinceMs: number, page: number, limit: number) => {
+      const col = await this.collection<OnlinePresenceRecord>(COLLECTIONS.onlinePresence);
+      const filter = { lastSeen: { $gte: sinceMs } };
+      const skip = (Math.max(1, page) - 1) * Math.max(1, limit);
+      const [items, total] = await Promise.all([
+        col.find(filter).sort({ lastSeen: -1 }).skip(skip).limit(limit).toArray(),
+        col.countDocuments(filter),
+      ]);
+      return buildPaginatedResult(items, total, page, limit);
     },
   };
 }

@@ -546,6 +546,15 @@ export interface AiLogRecord {
   createdAt: number;
 }
 
+/** 实时在线状态（心跳写入，用于管理后台在线人数） */
+export interface OnlinePresenceRecord {
+  _id: string;
+  userId: string;
+  nickname?: string;
+  role: UserRole;
+  lastSeen: number;
+}
+
 /** 用户活跃记录：login/register 为审计明细，online 为当日首次在线（仅用于汇总） */
 export interface LoginAuditRecord {
   _id: string;

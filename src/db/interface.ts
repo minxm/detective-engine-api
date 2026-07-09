@@ -9,8 +9,9 @@ import type {
   UserRecord,
   AiLogRecord,
   LoginAuditRecord,
+  GenerationJob,
+  OnlinePresenceRecord,
 } from '../types/index.js';
-import type { GenerationJob } from '../types/index.js';
 import type { PaginatedResult } from '../utils/pagination.js';
 
 export type InventoryListQuery = {
@@ -105,6 +106,10 @@ export interface DatabaseAdapter {
   generationJobs: {
     findById(id: string): Promise<GenerationJob | null>;
     upsert(job: GenerationJob): Promise<GenerationJob>;
+  };
+  onlinePresence: {
+    upsert(record: OnlinePresenceRecord): Promise<OnlinePresenceRecord>;
+    listActive(sinceMs: number, page: number, limit: number): Promise<PaginatedResult<OnlinePresenceRecord>>;
   };
 }
 

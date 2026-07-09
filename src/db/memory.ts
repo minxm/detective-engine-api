@@ -13,6 +13,7 @@ import type {
   InventoryRecord,
   LeaderboardRecord,
   LoginAuditRecord,
+  OnlinePresenceRecord,
   SessionRecord,
   UserRecord,
 } from '../types/index.js';
@@ -29,6 +30,7 @@ type Store = {
   claims: ClaimRecord[];
   loginAudits: LoginAuditRecord[];
   generationJobs: GenerationJob[];
+  onlinePresence: OnlinePresenceRecord[];
 };
 
 const DEFAULT_STORE: Store = {
@@ -42,6 +44,7 @@ const DEFAULT_STORE: Store = {
   claims: [],
   loginAudits: [],
   generationJobs: [],
+  onlinePresence: [],
 };
 
 function clone<T>(value: T): T {
@@ -382,6 +385,24 @@ export class MemoryDatabase implements DatabaseAdapter {
       else this.store.generationJobs.push(job);
       await this.persist();
       return job;
+    },
+  };
+
+  onlinePresence = {
+    upsert: async (record: OnlinePresenceRecord) => {
+      await this.ensureLoaded();
+      const idx = this.store.onlinePresence.findIndex((r) => r._id === record._id);
+      if (idx >= 0) this.store.onlinePresence[idx] = record;
+      else this.store.onlinePresence.push(record);
+      await this.persist();
+      return record;
+    },
+    listActive: async (sinceMs: number, page: number, limit: number) => {
+      await this.ensureLoaded();
+      const rows = this.store.onlinePresence
+        .filter((r) => r.lastSeen >= sinceMs)
+        .sort((a, b) => b.lastSeen - a.lastSeen);
+      return paginateArray(rows, page, limit);
     },
   };
 }

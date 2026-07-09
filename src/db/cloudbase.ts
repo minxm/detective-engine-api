@@ -13,6 +13,7 @@ import type {
   SessionRecord,
   UserRecord,
   LoginAuditRecord,
+  OnlinePresenceRecord,
 } from '../types/index.js';
 import {
   HISTORY_LIST_FIELD_PROJECTION,
@@ -33,6 +34,7 @@ const COLLECTIONS = {
   claims: 'claims',
   loginAudits: 'login_audits',
   generationJobs: 'generation_jobs',
+  onlinePresence: 'online_presence',
 } as const;
 
 function asDoc<T extends { _id: string }>(data: T | T[] | undefined | null): T | null {
@@ -492,5 +494,23 @@ export class CloudBaseDbAdapter implements DatabaseAdapter {
       return asDoc<GenerationJob>(res.data);
     },
     upsert: async (job: GenerationJob) => this.setRecord(COLLECTIONS.generationJobs, job),
+  };
+
+  onlinePresence = {
+    upsert: async (record: OnlinePresenceRecord) => this.setRecord(COLLECTIONS.onlinePresence, record),
+    listActive: async (sinceMs: number, page: number, limit: number) => {
+      const col = this.collection(COLLECTIONS.onlinePresence);
+      let rows: OnlinePresenceRecord[] = [];
+      try {
+        const res = await col.where({ lastSeen: this.db.command.gte(sinceMs) }).orderBy('lastSeen', 'desc').limit(2000).get();
+        rows = (res.data ?? []) as OnlinePresenceRecord[];
+      } catch {
+        const res = await col.limit(2000).get();
+        rows = ((res.data ?? []) as OnlinePresenceRecord[])
+          .filter((r) => r.lastSeen >= sinceMs)
+          .sort((a, b) => b.lastSeen - a.lastSeen);
+      }
+      return paginateArray(rows, page, limit);
+    },
   };
 }
