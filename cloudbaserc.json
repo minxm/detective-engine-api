@@ -1,5 +1,5 @@
 {
-  "envId": "",
+  "envId": "your-env-id",
   "cloudrun": {
     "name": "detective-engine-api"
   }

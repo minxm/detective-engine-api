@@ -1,4 +1,7 @@
 import { spawnSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import tencentcloud from 'tencentcloud-sdk-nodejs';
 import {
   buildEnvMap,
@@ -7,9 +10,22 @@ import {
 } from './deploy-env.js';
 
 const TcbrClient = tencentcloud.tcbr.v20220217.Client;
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function writeCloudbaserc(envId: string, serverName: string) {
+  const config = {
+    envId,
+    cloudrun: {
+      name: serverName,
+    },
+  };
+  const target = path.join(ROOT, 'cloudbaserc.json');
+  writeFileSync(target, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  console.log(`Wrote ${target} with envId=${envId}`);
 }
 
 function runCli(argv: string[]) {
@@ -98,6 +114,7 @@ async function main() {
   validateDeployEnvironment();
 
   console.log(`Deploying to Cloud Run: env=${envId}, service=${serverName}, port=${port}`);
+  writeCloudbaserc(envId, serverName);
 
   runCli(['login', '--apiKeyId', secretId, '--apiKey', secretKey]);
   runCli(['cloudrun', 'deploy', '-e', envId, '-s', serverName, '--port', String(port), '--force']);
