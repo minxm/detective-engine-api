@@ -39,6 +39,16 @@ function runCli(argv: string[]) {
   }
 }
 
+const READY_STATUSES = new Set(['normal', 'running']);
+const FAILED_STATUSES = new Set([
+  'create_failed',
+  'freeze_fail',
+  'delete_failed',
+  'abnormal',
+  'failed',
+  'error',
+]);
+
 async function waitForServerReady(
   client: InstanceType<typeof TcbrClient>,
   envId: string,
@@ -51,15 +61,16 @@ async function waitForServerReady(
       EnvId: envId,
       ServerName: serverName,
     });
-    const status = detail.BaseInfo?.Status ?? 'unknown';
-    console.log(`Cloud Run status: ${status}`);
-    if (status === 'running') return detail;
-    if (status === 'failed' || status === 'error') {
+    const status = (detail.BaseInfo?.Status ?? 'unknown').toLowerCase();
+    const onlineCount = detail.OnlineVersionInfos?.length ?? 0;
+    console.log(`Cloud Run status: ${status} (online versions: ${onlineCount})`);
+    if (READY_STATUSES.has(status)) return detail;
+    if (FAILED_STATUSES.has(status)) {
       throw new Error(`Cloud Run deploy failed: ${status}`);
     }
     await sleep(10_000);
   }
-  throw new Error('Timed out waiting for Cloud Run service to become running');
+  throw new Error('Timed out waiting for Cloud Run service to become ready');
 }
 
 async function syncServerConfig(
@@ -68,10 +79,18 @@ async function syncServerConfig(
   serverName: string,
   port: number
 ) {
-  const detail = await client.DescribeCloudRunServerDetail({
+  let detail = await client.DescribeCloudRunServerDetail({
     EnvId: envId,
     ServerName: serverName,
   });
+
+  const imageDeadline = Date.now() + 120_000;
+  while (!detail.OnlineVersionInfos?.[0]?.ImageUrl?.trim() && Date.now() < imageDeadline) {
+    console.log('Waiting for online version image URL...');
+    await sleep(10_000);
+    detail = await client.DescribeCloudRunServerDetail({ EnvId: envId, ServerName: serverName });
+  }
+
   const online = detail.OnlineVersionInfos?.[0];
   const imageUrl = online?.ImageUrl?.trim();
   if (!imageUrl) {

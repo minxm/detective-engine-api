@@ -42,13 +42,18 @@ export function requireEnv(name: string): string {
   return value;
 }
 
+let resolvedDbAdapter: string | undefined;
+
 export function resolveDbAdapter(): string {
+  if (resolvedDbAdapter) return resolvedDbAdapter;
   const raw = process.env.DB_ADAPTER?.trim();
   if (raw === 'mongodb' && !process.env.MONGODB_URI?.trim()) {
     console.warn('[deploy] DB_ADAPTER=mongodb 但未配置 MONGODB_URI，改用 cloudbase');
-    return 'cloudbase';
+    resolvedDbAdapter = 'cloudbase';
+    return resolvedDbAdapter;
   }
-  return raw || DEFAULTS.DB_ADAPTER;
+  resolvedDbAdapter = raw || DEFAULTS.DB_ADAPTER;
+  return resolvedDbAdapter;
 }
 
 export function resolveBlobAdapter(): string {
