@@ -124,5 +124,6 @@ export function getAuthConfig() {
     enabled: isCloudBaseEnabled(),
     envId: process.env.TCB_PUBLIC_ENV_ID ?? process.env.TCB_ENV_ID ?? '',
     region: process.env.TCB_REGION ?? 'ap-shanghai',
+    providers: ['wechat'],
   };
 }
