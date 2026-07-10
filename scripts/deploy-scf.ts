@@ -2,104 +2,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tencentcloud from 'tencentcloud-sdk-nodejs';
+import { buildScfEnvironment, requireEnv, validateDeployEnvironment } from './deploy-env.js';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;
-
-const ENV_KEYS = [
-  'SILICONFLOW_API_KEY',
-  'SILICONFLOW_BASE_URL',
-  'AI_CHAT_MODEL',
-  'AI_CASE_MODEL',
-  'AI_EVALUATE_MODEL',
-  'AI_IMAGE_MODEL',
-  'TCB_ENV_ID',
-  'TCB_PUBLIC_ENV_ID',
-  'TCB_REGION',
-  'TCB_SECRET_ID',
-  'TCB_SECRET_KEY',
-  'DB_ADAPTER',
-  'MONGODB_URI',
-  'MONGODB_DB',
-  'KV_ADAPTER',
-  'EO_SECRET_ID',
-  'EO_SECRET_KEY',
-  'EO_ZONE_ID',
-  'KV_NAMESPACE',
-  'BLOB_ADAPTER',
-  'BLOB_PUBLIC_BASE_URL',
-  'EO_BLOB_UPLOAD_URL',
-  'EO_BLOB_UPLOAD_TOKEN',
-] as const;
-
-const DEFAULTS: Record<string, string> = {
-  SILICONFLOW_BASE_URL: 'https://api.siliconflow.cn/v1',
-  AI_CHAT_MODEL: 'THUDM/GLM-4-9B-0414',
-  AI_CASE_MODEL: 'Qwen/Qwen3-8B',
-  AI_EVALUATE_MODEL: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
-  AI_IMAGE_MODEL: 'Kwai-Kolors/Kolors',
-  TCB_REGION: 'ap-shanghai',
-  DB_ADAPTER: 'cloudbase',
-  KV_ADAPTER: 'memory',
-  BLOB_ADAPTER: 'cloudbase',
-};
-
-function requireEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Missing required env: ${name}`);
-  return value;
-}
-
-function resolveDbAdapter(): string {
-  const raw = process.env.DB_ADAPTER?.trim();
-  if (raw === 'mongodb' && !process.env.MONGODB_URI?.trim()) {
-    console.warn('[deploy-scf] DB_ADAPTER=mongodb 但未配置 MONGODB_URI，改用 cloudbase');
-    return 'cloudbase';
-  }
-  return raw || DEFAULTS.DB_ADAPTER;
-}
-
-function resolveBlobAdapter(): string {
-  const raw = process.env.BLOB_ADAPTER?.trim();
-  if (raw === 'local' && resolveDbAdapter() === 'cloudbase') {
-    console.warn('[deploy-scf] BLOB_ADAPTER=local 在 CloudBase 生产环境不适用，改用 cloudbase');
-    return 'cloudbase';
-  }
-  if (raw) return raw;
-  if (resolveDbAdapter() === 'cloudbase') return 'cloudbase';
-  return DEFAULTS.BLOB_ADAPTER;
-}
-
-function validateDeployEnvironment() {
-  const dbAdapter = resolveDbAdapter();
-  if (dbAdapter === 'cloudbase') {
-    requireEnv('TCB_ENV_ID');
-    requireEnv('TCB_SECRET_ID');
-    requireEnv('TCB_SECRET_KEY');
-  }
-  if (dbAdapter === 'mongodb') {
-    requireEnv('MONGODB_URI');
-  }
-  const blobAdapter = resolveBlobAdapter();
-  if (blobAdapter === 'local') {
-    throw new Error('SCF 部署不能使用 BLOB_ADAPTER=local，请使用 cloudbase 或 edgeone');
-  }
-}
-
-function buildEnvironment() {
-  const dbAdapter = resolveDbAdapter();
-  const blobAdapter = resolveBlobAdapter();
-  const variables = ENV_KEYS.flatMap((key) => {
-    if (key === 'DB_ADAPTER') {
-      return [{ Key: key, Value: dbAdapter }];
-    }
-    if (key === 'BLOB_ADAPTER') {
-      return [{ Key: key, Value: blobAdapter }];
-    }
-    const value = process.env[key]?.trim() || DEFAULTS[key];
-    return value ? [{ Key: key, Value: value }] : [];
-  });
-  return { Variables: variables };
-}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -201,7 +106,7 @@ async function main() {
       Namespace: namespace,
       Timeout: 600,
       MemorySize: 1024,
-      Environment: buildEnvironment(),
+      Environment: buildScfEnvironment(),
     })
   );
 

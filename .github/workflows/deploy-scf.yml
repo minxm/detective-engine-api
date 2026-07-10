@@ -1,8 +1,6 @@
-name: Deploy to CloudBase Run
+name: Deploy to Tencent SCF (legacy)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -22,20 +20,36 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      - name: Deploy to CloudBase Run
+      - name: Package for SCF
+        run: |
+          rm -rf .scf-build function.zip
+          mkdir -p .scf-build
+          cp -r dist/cloud-functions dist/src .scf-build/
+          cp scf_bootstrap .scf-build/
+          cp package.json package-lock.json .scf-build/
+          cd .scf-build
+          chmod 755 scf_bootstrap
+          npm install --omit=dev --ignore-scripts
+          find . -name '*.d.ts' -delete
+          find . -name '*.map' -delete
+          zip -r ../function.zip .
+          cd ..
+          ls -lh function.zip
+
+      - name: Deploy to SCF
         env:
-          CI: true
           TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
-          TCB_ENV_ID: ${{ secrets.TCB_ENV_ID }}
-          CLOUDRUN_SERVICE_NAME: ${{ secrets.CLOUDRUN_SERVICE_NAME }}
-          CLOUDRUN_PORT: '9000'
+          SCF_REGION: ${{ secrets.SCF_REGION }}
+          SCF_FUNCTION_NAME: ${{ secrets.SCF_FUNCTION_NAME }}
+          SCF_NAMESPACE: ${{ secrets.SCF_NAMESPACE }}
           SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
           SILICONFLOW_BASE_URL: ${{ secrets.SILICONFLOW_BASE_URL }}
           AI_CHAT_MODEL: ${{ secrets.AI_CHAT_MODEL }}
           AI_CASE_MODEL: ${{ secrets.AI_CASE_MODEL }}
           AI_EVALUATE_MODEL: ${{ secrets.AI_EVALUATE_MODEL }}
           AI_IMAGE_MODEL: ${{ secrets.AI_IMAGE_MODEL }}
+          TCB_ENV_ID: ${{ secrets.TCB_ENV_ID }}
           TCB_PUBLIC_ENV_ID: ${{ secrets.TCB_PUBLIC_ENV_ID }}
           TCB_REGION: ${{ secrets.TCB_REGION }}
           TCB_SECRET_ID: ${{ secrets.TCB_SECRET_ID }}
@@ -52,4 +66,4 @@ jobs:
           BLOB_PUBLIC_BASE_URL: ${{ secrets.BLOB_PUBLIC_BASE_URL }}
           EO_BLOB_UPLOAD_URL: ${{ secrets.EO_BLOB_UPLOAD_URL }}
           EO_BLOB_UPLOAD_TOKEN: ${{ secrets.EO_BLOB_UPLOAD_TOKEN }}
-        run: npx tsx scripts/deploy-cloudrun.ts
+        run: npx tsx scripts/deploy-scf.ts

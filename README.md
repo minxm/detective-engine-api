@@ -1,18 +1,20 @@
 # detective-engine-api
 
-AI 推理侦探游戏后端 — EdgeOne Cloud Functions + 可替换存储层。
+AI 推理侦探游戏后端 — CloudBase 云托管 + 可替换存储层。
 
 ## 架构
 
 ```
-浏览器 → /api/* → Cloud Functions
+浏览器 → VITE_API_BASE (/api/*) → CloudBase Run（容器型云托管）
                     ├── DatabaseAdapter (memory | cloudbase | mongodb)
                     ├── KvAdapter (memory | edgeone)
-                    ├── BlobAdapter (local | edgeone)
+                    ├── BlobAdapter (local | cloudbase | edgeone)
                     └── CloudBase Auth 验证
                               ↓
                          硅基流动 AI
 ```
+
+> 历史方案使用独立 SCF Web 函数，已迁移至同一 CloudBase 环境的云托管。回滚见 [deploy-scf.yml](.github/workflows/deploy-scf.yml)（仅手动触发）。
 
 ## 适配器切换
 
@@ -20,11 +22,9 @@ AI 推理侦探游戏后端 — EdgeOne Cloud Functions + 可替换存储层。
 |---------|--------|------|
 | `DB_ADAPTER` | `memory`, `cloudbase`, `mongodb` | 业务数据库（生产推荐 `cloudbase`） |
 | `KV_ADAPTER` | `memory`, `edgeone` | 任务缓存、在线人数 |
-| `BLOB_ADAPTER` | `local`, `cloudbase`, `edgeone` | AI 图片存储（SCF/CloudBase 生产推荐 `cloudbase`） |
+| `BLOB_ADAPTER` | `local`, `cloudbase`, `edgeone` | AI 图片存储（云托管生产推荐 `cloudbase`） |
 
 ### CloudBase 文档型数据库（推荐）
-
-使用 TCB 内置文档库，无需独立 MongoDB：
 
 ```env
 DB_ADAPTER=cloudbase
@@ -40,9 +40,9 @@ TCB_REGION=ap-shanghai
 npm run init:tcb-collections
 ```
 
-需在 TCB 控制台创建以下 8 个集合（名称必须一致），权限建议 **仅管理端可读写**：
+需在 TCB 控制台创建以下集合（名称必须一致），权限建议 **仅管理端可读写**：
 
-`users` · `cases` · `sessions` · `history` · `leaderboard` · `inventory` · `ai_logs` · `claims` · `login_audits`
+`users` · `cases` · `sessions` · `history` · `leaderboard` · `inventory` · `ai_logs` · `claims` · `login_audits` · `generation_jobs` · `online_presence` · `refill_jobs`
 
 ### MongoDB（可选，自建实例）
 
@@ -72,42 +72,6 @@ TCB_PUBLIC_ENV_ID=your-env-id   # 前端用
 | `user` | 普通用户（默认） |
 | `admin` | 管理员，可访问 `/admin` 与库存补货 |
 
-首次登录自动创建用户，默认 `role: user`。提升为管理员示例（CloudBase 控制台 → 文档型数据库 → `users` 集合）：
-
-```js
-// 在控制台编辑对应文档，将 role 改为 "admin"
-{ "role": "admin" }
-```
-
-MongoDB 模式下也可用：
-
-```js
-db.users.updateOne({ _id: "用户ID" }, { $set: { role: "admin" } })
-```
-
-本地 memory 模式可直接编辑 `data/store.json` 中对应用户的 `role` 字段。
-
-### EdgeOne KV
-
-```env
-KV_ADAPTER=edgeone
-EO_SECRET_ID=...
-EO_SECRET_KEY=...
-EO_ZONE_ID=zone-xxx
-KV_NAMESPACE=detective-kv
-```
-
-### EdgeOne Blob
-
-```env
-BLOB_ADAPTER=edgeone
-BLOB_PUBLIC_BASE_URL=https://your-domain/blobs
-EO_BLOB_UPLOAD_URL=https://your-blob-gateway
-EO_BLOB_UPLOAD_TOKEN=...
-```
-
-案件生成时会固定调用 `AI_IMAGE_MODEL` 生图并上传 Blob（本地/线上一致，需配置 `SILICONFLOW_API_KEY`）。
-
 ## 本地开发
 
 ```bash
@@ -116,47 +80,51 @@ npm install
 npm run dev
 ```
 
-## 部署到腾讯云 SCF
+## 部署到 CloudBase 云托管
 
-触发器 URL 示例：`https://1450903261-2c7ic9hgxq.ap-shanghai.tencentscf.com`
+云托管默认域名示例：`https://detective-engine-api-xxxxx.ap-shanghai.run.tcloudbase.com`
 
-前端 `.env.production` 中的 `VITE_API_BASE` 应指向 `{触发器URL}/api`。
+前端 `.env.production` 中的 `VITE_API_BASE` 应指向 `{默认域名}/api`。
 
-### 方式一：GitHub Actions 自动部署
+### GitHub Actions 自动部署（推荐）
 
 仓库 `Settings → Secrets → Actions` 添加：
 
-| Secret | 示例 / 说明 |
-|--------|-------------|
-| `TENCENT_SECRET_ID` | 腾讯云 API 密钥 |
-| `TENCENT_SECRET_KEY` | 腾讯云 API 密钥 |
-| `SCF_REGION` | `ap-shanghai` |
-| `SCF_FUNCTION_NAME` | 控制台中的函数名 |
-| `SCF_NAMESPACE` | `default` |
-| `SILICONFLOW_API_KEY` | 硅基流动密钥 |
-| `SILICONFLOW_BASE_URL` | `https://api.siliconflow.cn/v1` |
-| `AI_CHAT_MODEL` / `AI_CASE_MODEL` / `AI_EVALUATE_MODEL` / `AI_IMAGE_MODEL` | 同 `.env.example` |
-| `TCB_ENV_ID` / `TCB_PUBLIC_ENV_ID` / `TCB_REGION` | CloudBase |
-| `TCB_SECRET_ID` / `TCB_SECRET_KEY` | CloudBase 服务端密钥 |
-| `DB_ADAPTER` | 生产推荐 `cloudbase`，测试可用 `memory` |
-| `MONGODB_URI` / `MONGODB_DB` | 仅 `DB_ADAPTER=mongodb` 时需要 |
-| `KV_ADAPTER` / `BLOB_ADAPTER` | 可选，默认可填 `memory` / `local` |
+| Secret | 说明 |
+|--------|------|
+| `TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY` | 腾讯云 API 密钥（CAM） |
+| `TCB_ENV_ID` | CloudBase 环境 ID |
+| `CLOUDRUN_SERVICE_NAME` | 可选，默认 `detective-engine-api` |
+| `SILICONFLOW_API_KEY` 及 `AI_*` / `TCB_*` | 同 `.env.example` |
+| `DB_ADAPTER` | 生产推荐 `cloudbase` |
 
-push 到 `main` 后 Actions 自动打包，并通过腾讯云 SDK 更新 **Web 函数**（含 `scf_bootstrap`，监听 9000 端口）。
+push 到 `main` 后 Actions 会：
 
-### 方式二：控制台手动上传
+1. `npm run build` 编译 TypeScript
+2. 使用根目录 `Dockerfile` 通过 `@cloudbase/cli` 部署容器型云托管（端口 9000）
+3. 通过 tcbr API 同步环境变量与资源配置（2GB 内存、0–5 副本）
+
+部署日志会输出 `API base (set VITE_API_BASE)`，请将该地址写入前端仓库的 `.env.production` 并重新构建 `dist/`。
+
+### 本地手动部署
 
 ```bash
-npm run package:scf
+npm run build
+# 设置 TENCENT_SECRET_ID、TENCENT_SECRET_KEY、TCB_ENV_ID 等环境变量
+npm run deploy:cloudrun
 ```
 
-生成 `function.zip`，在 [SCF 控制台](https://console.cloud.tencent.com/scf) 上传代码包，并配置环境变量（同 `.env.example`）。
+### 控制台建议配置
 
-函数类型须为 **Web 函数**，zip 根目录包含 `scf_bootstrap`（启动 `cloud-functions/web-server.js`，监听 9000 端口）。
+首次部署后，在 [云托管控制台](https://console.cloud.tencent.com/tcb/env/cloudrun) 确认：
 
-部署成功后访问根路径应返回 JSON（`service: detective-engine-api`），而不是 Hello World。
+- **公网访问**：已开启
+- **请求超时**：建议 600s（案件生成、生图耗时较长）
+- **跨域**：前端域名已加入 CloudBase 环境「安全来源」列表
 
-> **注意**：SCF 上使用 `DB_ADAPTER=memory` 数据不持久，生产请用 `cloudbase` 或 `mongodb`。
+### 停用旧 SCF 函数
+
+迁移验证通过后，在 [SCF 控制台](https://console.cloud.tencent.com/scf) 删除或停用原 Web 函数，避免重复计费。
 
 ## API 路由
 

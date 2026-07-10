@@ -1,0 +1,15 @@
+node_modules
+.git
+.github
+data
+.env
+.env.*
+*.md
+function.zip
+.scf-build
+src
+cloud-functions
+scripts
+tsconfig.json
+scf_bootstrap
+dist/scripts

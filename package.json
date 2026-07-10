@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "tsx watch scripts/dev-server.ts",
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/cloud-functions/web-server.js",
     "package:scf": "tsx scripts/package-scf.ts",
     "deploy:scf": "tsx scripts/deploy-scf.ts",
+    "deploy:cloudrun": "tsx scripts/deploy-cloudrun.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src cloud-functions scripts --ext .ts",
     "init:tcb-collections": "tsx scripts/init-tcb-collections.ts"

@@ -1,0 +1,6 @@
+{
+  "envId": "",
+  "cloudrun": {
+    "name": "detective-engine-api"
+  }
+}
