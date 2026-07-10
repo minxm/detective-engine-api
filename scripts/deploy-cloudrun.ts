@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import tencentcloud from 'tencentcloud-sdk-nodejs';
 import {
   buildEnvMap,
@@ -12,11 +12,15 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function runCli(args: string) {
-  execSync(`npx --yes @cloudbase/cli@latest ${args}`, {
+function runCli(argv: string[]) {
+  const result = spawnSync('npx', ['--yes', '-p', '@cloudbase/cli', 'tcb', ...argv], {
     stdio: 'inherit',
     env: { ...process.env, CI: 'true' },
+    shell: process.platform === 'win32',
   });
+  if (result.status !== 0) {
+    throw new Error(`tcb ${argv.join(' ')} failed with exit code ${result.status ?? 'unknown'}`);
+  }
 }
 
 async function waitForServerReady(
@@ -95,8 +99,8 @@ async function main() {
 
   console.log(`Deploying to Cloud Run: env=${envId}, service=${serverName}, port=${port}`);
 
-  runCli(`login --apiKeyId ${secretId} --apiKey ${secretKey}`);
-  runCli(`cloudrun deploy -e ${envId} -s ${serverName} --port ${port} --force`);
+  runCli(['login', '--apiKeyId', secretId, '--apiKey', secretKey]);
+  runCli(['cloudrun', 'deploy', '-e', envId, '-s', serverName, '--port', String(port), '--force']);
 
   const client = new TcbrClient({
     credential: { secretId, secretKey },
