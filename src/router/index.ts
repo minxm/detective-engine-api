@@ -26,6 +26,7 @@ import {
   handleAdminAiLogsCleanup,
   handleAdminLoginAudits,
 } from '../../cloud-functions/admin/lists.js';
+import { handleBlobGetRequest } from '../services/blob-access.js';
 
 export type CloudContext = {
   headers: Record<string, string | undefined>;
@@ -93,6 +94,16 @@ function matchRoute(method: string, pathname: string): { handler: RouteHandler; 
 
 export async function handleRequest(ctx: CloudContext): Promise<Response> {
   if (ctx.method === 'OPTIONS') return corsPreflightResponse();
+
+  if (ctx.method === 'GET' && ctx.path.startsWith('/api/blobs/')) {
+    const blobKey = ctx.path.slice('/api/blobs/'.length);
+    try {
+      return withCors(await handleBlobGetRequest(blobKey));
+    } catch (error) {
+      console.error('[router] blob handler failed:', error);
+      return jsonResponse({ success: false, error: (error as Error).message || '图片读取失败' }, 500);
+    }
+  }
 
   if (ctx.method === 'GET' && (ctx.path === '/' || ctx.path === '/health')) {
     return jsonResponse({
