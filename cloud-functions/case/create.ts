@@ -7,6 +7,7 @@ import { generateAndPersistCase } from '../../src/services/case-generation.js';
 import { cacheJob, getCachedJob } from '../../src/services/job-cache.js';
 import { getJobProgress } from '../../src/services/job-progress.js';
 import { caseRecordToCaseData } from '../../src/services/case-service.js';
+import { withFreshCaseImageUrls } from '../../src/services/case-assets.js';
 import { recordCaseClaim } from '../../src/services/claim-service.js';
 import { pickInventoryForUser } from '../../src/services/inventory-pick.js';
 import type { Difficulty, GenerationJob } from '../../src/types/index.js';
@@ -43,7 +44,9 @@ export async function handleCaseCreate(ctx: CloudContext): Promise<Response> {
       }
 
       const record = await db.cases.findById(inventory.caseId);
-      const caseData = record ? caseRecordToCaseData(record) : inventory.caseData;
+      const caseData = await withFreshCaseImageUrls(
+        record ? caseRecordToCaseData(record) : inventory.caseData,
+      );
 
       return jsonResponse({
         success: true,
@@ -78,7 +81,11 @@ export async function handleCaseCreate(ctx: CloudContext): Promise<Response> {
     });
   }
 
-  return jsonResponse({ success: true, caseId: caseData.id, caseData });
+  return jsonResponse({
+    success: true,
+    caseId: caseData.id,
+    caseData: await withFreshCaseImageUrls(caseData),
+  });
 }
 
 async function runGenerationJob(
@@ -158,7 +165,7 @@ export async function handleCaseStatus(ctx: CloudContext): Promise<Response> {
       payload.caseId = job.caseId;
       try {
         const record = await db.cases.findById(job.caseId);
-        payload.caseData = record ? caseRecordToCaseData(record) : null;
+        payload.caseData = record ? await withFreshCaseImageUrls(caseRecordToCaseData(record)) : null;
         if (userId && record) {
           void recordCaseHistoryStart({
             userId,
@@ -196,5 +203,8 @@ export async function handleCaseGet(ctx: CloudContext): Promise<Response> {
   const record = await db.cases.findById(caseId);
   if (!record) return jsonResponse({ success: false, error: '案件不存在' }, 404);
 
-  return jsonResponse({ success: true, caseData: caseRecordToCaseData(record) });
+  return jsonResponse({
+    success: true,
+    caseData: await withFreshCaseImageUrls(caseRecordToCaseData(record)),
+  });
 }

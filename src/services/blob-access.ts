@@ -1,149 +1,69 @@
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { getCloudBaseApp } from '../db/cloudbase-client.js';
-import { resolveBlobAdapterName } from '../blob/index.js';
-import { CORS_HEADERS, jsonResponse } from '../utils/index.js';
 
-const CLOUD_PREFIX = 'case-images';
 const TEMP_URL_MAX_AGE = 60 * 60 * 24 * 30;
+const CLOUDBASE_HOST_SUFFIX = 'tcb.qcloud.la';
 
-/** 从各类历史 URL 形态中提取对象存储 key，如 cases/{caseId}/victim.png */
-export function extractBlobKey(url: string): string | null {
-  const trimmed = url.trim();
-  if (!trimmed) return null;
-
-  if (/^cases\//.test(trimmed)) {
-    return trimmed.split('?')[0].split('#')[0];
+/** 判断是否为 CloudBase 云存储直连地址 */
+function isCloudBaseUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname.endsWith(CLOUDBASE_HOST_SUFFIX);
+  } catch {
+    return false;
   }
+}
 
-  const cloudMatch = trimmed.match(/cloud:\/\/[^/]+\/case-images\/(cases\/[^?#]+)/i);
-  if (cloudMatch) return cloudMatch[1];
-
-  for (const prefix of ['/api/blobs/', '/blobs/']) {
-    if (trimmed.startsWith(prefix)) {
-      return decodeURIComponent(trimmed.slice(prefix.length)).split('?')[0].split('#')[0];
-    }
+/**
+ * 从已存的 CloudBase 直连 URL 重建 fileID。
+ * 形如 https://{bucket}.tcb.qcloud.la/{cloudPath}?sign=... →
+ * cloud://{envId}.{bucket}/{cloudPath}
+ */
+function buildFileIdFromStoredUrl(url: string): string | null {
+  const env = process.env.TCB_ENV_ID ?? '';
+  if (!env) return null;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.endsWith(CLOUDBASE_HOST_SUFFIX)) return null;
+    const bucket = parsed.hostname.slice(0, -(`.${CLOUDBASE_HOST_SUFFIX}`.length));
+    const cloudPath = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+    if (!bucket || !cloudPath) return null;
+    return `cloud://${env}.${bucket}/${cloudPath}`;
+  } catch {
+    return null;
   }
+}
+
+/**
+ * 批量把已存（可能已过期）的 CloudBase 图片地址刷新为新鲜的临时直连地址。
+ * 非 CloudBase 地址（如本地开发 /blobs、localhost）原样返回。
+ */
+export async function refreshCloudBaseUrls(urls: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const unique = [...new Set(urls.filter((u) => u && isCloudBaseUrl(u)))];
+  if (unique.length === 0) return result;
+
+  const fileIdByUrl = new Map<string, string>();
+  for (const url of unique) {
+    const fileId = buildFileIdFromStoredUrl(url);
+    if (fileId) fileIdByUrl.set(url, fileId);
+  }
+  if (fileIdByUrl.size === 0) return result;
 
   try {
-    const parsed = new URL(trimmed);
-    const pathname = decodeURIComponent(parsed.pathname);
-    for (const prefix of ['/api/blobs/', '/blobs/', '/case-images/']) {
-      const idx = pathname.indexOf(prefix);
-      if (idx >= 0) {
-        const key = pathname.slice(idx + prefix.length).replace(/^\/+/, '');
-        if (key.startsWith('cases/')) return key.split('?')[0];
+    const app = getCloudBaseApp();
+    const entries = [...fileIdByUrl.entries()];
+    const res = await app.getTempFileURL({
+      fileList: entries.map(([, fileId]) => ({ fileID: fileId, maxAge: TEMP_URL_MAX_AGE })),
+    });
+    const list = res.fileList ?? [];
+    entries.forEach(([url], index) => {
+      const item = list[index];
+      if (item?.code === 'SUCCESS' && item.tempFileURL) {
+        result.set(url, item.tempFileURL);
       }
-    }
-    const match = pathname.match(/\/cases\/[^?#]+/);
-    if (match) return match[0].replace(/^\//, '');
-  } catch {
-    const match = trimmed.match(/cases\/[^?#]+/);
-    if (match) return match[0];
+    });
+  } catch (error) {
+    console.warn('[blob-access] 刷新图片地址失败:', (error as Error).message);
   }
 
-  return null;
-}
-
-export function toBlobProxyPath(key: string): string {
-  return `/api/blobs/${key.split('/').map(encodeURIComponent).join('/')}`;
-}
-
-function isCloudBaseConfigured(): boolean {
-  return Boolean(process.env.TCB_ENV_ID && process.env.TCB_SECRET_ID && process.env.TCB_SECRET_KEY);
-}
-
-async function getCloudBaseTempUrlForKey(key: string): Promise<string> {
-  const app = getCloudBaseApp();
-  const env = process.env.TCB_ENV_ID ?? '';
-  const cloudPath = `${CLOUD_PREFIX}/${key}`;
-  const fileID = `cloud://${env}/${cloudPath}`;
-  const urlRes = await app.getTempFileURL({
-    fileList: [{ fileID, maxAge: TEMP_URL_MAX_AGE }],
-  });
-  const item = urlRes.fileList?.[0];
-  const tempUrl = item?.tempFileURL;
-  if (!tempUrl || item?.code !== 'SUCCESS') {
-    throw new Error(item?.code ? `CloudBase 获取图片地址失败：${item.code}` : 'CloudBase 获取图片访问地址失败');
-  }
-  return tempUrl;
-}
-
-function localBlobRoot(): string {
-  return path.resolve(process.env.DB_DATA_DIR ?? './data', 'blobs');
-}
-
-function isSafeBlobKey(key: string): boolean {
-  return /^cases\/[^/]+\/.+\.(png|jpg|jpeg|webp)$/i.test(key);
-}
-
-export async function handleBlobGetRequest(rawKey: string): Promise<Response> {
-  const key = decodeURIComponent(rawKey).replace(/^\/+/, '');
-  if (!key || !isSafeBlobKey(key)) {
-    return jsonResponse({ success: false, error: '无效的图片路径' }, 400);
-  }
-
-  const adapter = resolveBlobAdapterName();
-
-  if (adapter === 'cloudbase' || isCloudBaseConfigured()) {
-    try {
-      const tempUrl = await getCloudBaseTempUrlForKey(key);
-      return new Response(null, {
-        status: 302,
-        headers: {
-          Location: tempUrl,
-          'Cache-Control': 'private, max-age=3600',
-          ...CORS_HEADERS,
-        },
-      });
-    } catch (error) {
-      console.error('[blob-access] CloudBase redirect failed:', key, error);
-      return jsonResponse({ success: false, error: (error as Error).message || '图片读取失败' }, 404);
-    }
-  }
-
-  const root = localBlobRoot();
-  const filePath = path.join(root, key);
-  if (!filePath.startsWith(root) || !existsSync(filePath)) {
-    if (isCloudBaseConfigured()) {
-      try {
-        const tempUrl = await getCloudBaseTempUrlForKey(key);
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: tempUrl,
-            'Cache-Control': 'private, max-age=3600',
-            ...CORS_HEADERS,
-          },
-        });
-      } catch {
-        // fall through to 404
-      }
-    }
-    return jsonResponse({ success: false, error: '图片不存在' }, 404);
-  }
-
-  const data = await readFile(filePath);
-  const contentType = key.endsWith('.png')
-    ? 'image/png'
-    : key.endsWith('.webp')
-      ? 'image/webp'
-      : 'image/jpeg';
-
-  return new Response(data, {
-    status: 200,
-    headers: {
-      'Content-Type': contentType,
-      'Cache-Control': 'public, max-age=86400',
-      ...CORS_HEADERS,
-    },
-  });
-}
-
-export async function resolveBlobAccessUrl(url?: string): Promise<string | undefined> {
-  if (!url?.trim()) return undefined;
-  const key = extractBlobKey(url.trim());
-  if (key) return toBlobProxyPath(key);
-  return url.trim();
+  return result;
 }

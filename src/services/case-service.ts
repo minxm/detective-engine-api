@@ -1,6 +1,5 @@
 import type { CaseData, CaseRecord, InventoryRecord, Suspect, Evidence } from '../types/index.js';
 import { generateId, now } from '../utils/index.js';
-import { withResolvedCaseAssetUrls } from './case-assets.js';
 // ─── ID 规范化辅助函数 ────────────────────────────────────────────────────────
 
 function normalizeSuspectId(id: unknown, index: number): string {
@@ -129,7 +128,7 @@ export function caseRecordToCaseData(record: CaseRecord): CaseData {
     sceneDescription: '',
     sceneImageUrl: undefined,
   };
-  return withResolvedCaseAssetUrls(normalizeCaseData({
+  return normalizeCaseData({
     id: record._id,
     title: record.title ?? '未命名案件',
     difficulty: record.difficulty,
@@ -156,7 +155,7 @@ export function caseRecordToCaseData(record: CaseRecord): CaseData {
     wrongReasonings: record.wrongReasonings!,
     easterEggs: record.easterEggs!,
     achievements: record.achievements!,
-  } as CaseData));
+  } as CaseData);
 }
 
 export function caseDataToRecord(caseData: CaseData): CaseRecord {

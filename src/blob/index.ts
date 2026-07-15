@@ -47,10 +47,6 @@ export function getBlob(): BlobAdapter {
   return blobInstance;
 }
 
-export function resolveBlobAdapterName(): string {
-  return resolveBlobAdapter();
-}
-
 export function resetBlobForTests() {
   blobInstance = null;
 }
