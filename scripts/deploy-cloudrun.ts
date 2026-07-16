@@ -29,6 +29,19 @@ function writeCloudbaserc(envId: string, serverName: string) {
 }
 
 function runCli(argv: string[]) {
+  // 优先使用本机全局 tcb，避免 npx 走内网 npm 源失败
+  const viaGlobal = spawnSync('tcb', argv, {
+    stdio: 'inherit',
+    env: { ...process.env, CI: 'true' },
+    shell: process.platform === 'win32',
+  });
+  if (viaGlobal.status === 0) return;
+  if (viaGlobal.error?.message && /ENOENT|not recognized/i.test(viaGlobal.error.message)) {
+    // fall through to npx
+  } else if (viaGlobal.status !== 0 && viaGlobal.status != null) {
+    throw new Error(`tcb ${argv.join(' ')} failed with exit code ${viaGlobal.status}`);
+  }
+
   const result = spawnSync('npx', ['--yes', '-p', '@cloudbase/cli', 'tcb', ...argv], {
     stdio: 'inherit',
     env: { ...process.env, CI: 'true' },
