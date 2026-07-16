@@ -29,26 +29,34 @@ function writeCloudbaserc(envId: string, serverName: string) {
 }
 
 function runCli(argv: string[]) {
+  // 灰度提示默认选「否」；--force 在部分 CLI 版本仍会交互
+  const input = Buffer.from('\n');
+  const env = { ...process.env, CI: 'true', FORCE_COLOR: '0' };
+
   // 优先使用本机全局 tcb，避免 npx 走内网 npm 源失败
   const viaGlobal = spawnSync('tcb', argv, {
-    stdio: 'inherit',
-    env: { ...process.env, CI: 'true' },
+    stdio: ['pipe', 'inherit', 'inherit'],
+    env,
     shell: process.platform === 'win32',
+    input,
   });
   if (viaGlobal.status === 0) return;
   if (viaGlobal.error?.message && /ENOENT|not recognized/i.test(viaGlobal.error.message)) {
     // fall through to npx
   } else if (viaGlobal.status !== 0 && viaGlobal.status != null) {
-    throw new Error(`tcb ${argv.join(' ')} failed with exit code ${viaGlobal.status}`);
+    const safe = argv.map((a) => (/^AKID|^[A-Za-z0-9]{32,}$/.test(a) ? '***' : a)).join(' ');
+    throw new Error(`tcb ${safe} failed with exit code ${viaGlobal.status}`);
   }
 
   const result = spawnSync('npx', ['--yes', '-p', '@cloudbase/cli', 'tcb', ...argv], {
-    stdio: 'inherit',
-    env: { ...process.env, CI: 'true' },
+    stdio: ['pipe', 'inherit', 'inherit'],
+    env,
     shell: process.platform === 'win32',
+    input,
   });
   if (result.status !== 0) {
-    throw new Error(`tcb ${argv.join(' ')} failed with exit code ${result.status ?? 'unknown'}`);
+    const safe = argv.map((a) => (/^AKID|^[A-Za-z0-9]{32,}$/.test(a) ? '***' : a)).join(' ');
+    throw new Error(`tcb ${safe} failed with exit code ${result.status ?? 'unknown'}`);
   }
 }
 
