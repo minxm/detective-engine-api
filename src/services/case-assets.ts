@@ -1,9 +1,10 @@
 import type { CaseData } from '../types/index.js';
-import { refreshCloudBaseUrls } from './blob-access.js';
+import { extractBlobKey, refreshCloudBaseUrls, toBlobProxyPath } from './blob-access.js';
 
 /**
- * 返回案件数据前，把其中所有 CloudBase 图片地址刷新为新鲜的临时直连地址，
- * 避免库存/历史案件因临时链接过期导致图片加载失败（403）。
+ * 返回案件数据前，把其中所有图片地址刷新为新鲜的临时直连地址；
+ * 刷新失败但仍能解析出 blob key 时，回退为 /api/blobs 同源代理路径，
+ * 避免库存/历史案件因临时链接过期或旧代理路径导致图片加载失败。
  */
 export async function withFreshCaseImageUrls(caseData: CaseData): Promise<CaseData> {
   const urls: string[] = [];
@@ -19,9 +20,15 @@ export async function withFreshCaseImageUrls(caseData: CaseData): Promise<CaseDa
   if (urls.length === 0) return caseData;
 
   const fresh = await refreshCloudBaseUrls(urls);
-  if (fresh.size === 0) return caseData;
 
-  const pick = (url?: string) => (url && fresh.get(url)) || url;
+  const pick = (url?: string) => {
+    if (!url) return url;
+    const refreshed = fresh.get(url);
+    if (refreshed) return refreshed;
+    const key = extractBlobKey(url);
+    if (key) return toBlobProxyPath(key);
+    return url;
+  };
 
   return {
     ...caseData,
