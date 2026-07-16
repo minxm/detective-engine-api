@@ -7,7 +7,7 @@ import { CORS_HEADERS, jsonResponse } from '../utils/index.js';
 
 const CLOUD_PREFIX = 'case-images';
 const TEMP_URL_MAX_AGE = 60 * 60 * 24 * 30;
-const CLOUDBASE_HOST_SUFFIX = 'tcb.qcloud.la';
+const CLOUDBASE_HOST_SUFFIXES = ['tcb.qcloud.la', 'tcloudbaseapp.com'];
 
 /** 从各类历史 URL 形态中提取对象存储 key，如 cases/{caseId}/victim.png */
 export function extractBlobKey(url: string): string | null {
@@ -18,7 +18,7 @@ export function extractBlobKey(url: string): string | null {
     return trimmed.split('?')[0].split('#')[0];
   }
 
-  const cloudMatch = trimmed.match(/cloud:\/\/[^/]+\/case-images\/(cases\/[^?#]+)/i);
+  const cloudMatch = trimmed.match(/cloud:\/\/[^/]+\/(?:case-images\/)?(cases\/[^?#]+)/i);
   if (cloudMatch) return cloudMatch[1];
 
   for (const prefix of ['/api/blobs/', '/blobs/']) {
@@ -51,12 +51,38 @@ export function toBlobProxyPath(key: string): string {
   return `/api/blobs/${key.split('/').map(encodeURIComponent).join('/')}`;
 }
 
-function isCloudBaseUrl(url: string): boolean {
+/** 浏览器可直接作为 img src 的远程 http(s) 地址（排除 localhost / 相对代理路径） */
+export function isUsableDirectImageUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith('cloud://')) return false;
+  if (trimmed.startsWith('/api/blobs/') || trimmed.startsWith('/blobs/')) return false;
   try {
-    return new URL(url).hostname.endsWith(CLOUDBASE_HOST_SUFFIX);
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') return false;
+    if (parsed.pathname.startsWith('/blobs/') || parsed.pathname.startsWith('/api/blobs/')) return false;
+    return true;
   } catch {
     return false;
   }
+}
+
+function isCloudBaseHost(hostname: string): boolean {
+  return CLOUDBASE_HOST_SUFFIXES.some(
+    (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`),
+  );
+}
+
+function isCloudBaseUrl(url: string): boolean {
+  try {
+    return isCloudBaseHost(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isCloudFileId(url: string): boolean {
+  return url.trim().startsWith('cloud://');
 }
 
 /**
@@ -69,10 +95,16 @@ function buildFileIdFromStoredUrl(url: string): string | null {
   if (!env) return null;
   try {
     const parsed = new URL(url);
-    if (!parsed.hostname.endsWith(CLOUDBASE_HOST_SUFFIX)) return null;
-    const bucket = parsed.hostname.slice(0, -(`.${CLOUDBASE_HOST_SUFFIX}`.length));
+    if (!isCloudBaseHost(parsed.hostname)) return null;
+    const host = parsed.hostname;
+    const suffix = CLOUDBASE_HOST_SUFFIXES.find(
+      (s) => host === s || host.endsWith(`.${s}`),
+    );
+    if (!suffix) return null;
+    const bucket = host === suffix ? '' : host.slice(0, -(`.${suffix}`.length));
     const cloudPath = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
-    if (!bucket || !cloudPath) return null;
+    if (!cloudPath) return null;
+    if (!bucket) return `cloud://${env}/${cloudPath}`;
     return `cloud://${env}.${bucket}/${cloudPath}`;
   } catch {
     return null;
@@ -88,6 +120,20 @@ function buildFileIdCandidatesForKey(key: string): string[] {
   const bucket = process.env.TCB_STORAGE_BUCKET?.trim();
   if (bucket) ids.unshift(`cloud://${env}.${bucket}/${cloudPath}`);
   return ids;
+}
+
+function collectFileIdCandidates(url: string): string[] {
+  const fileIds: string[] = [];
+  if (isCloudFileId(url)) {
+    fileIds.push(url.trim());
+  }
+  if (isCloudBaseUrl(url)) {
+    const fromUrl = buildFileIdFromStoredUrl(url);
+    if (fromUrl) fileIds.push(fromUrl);
+  }
+  const key = extractBlobKey(url);
+  if (key) fileIds.push(...buildFileIdCandidatesForKey(key));
+  return [...new Set(fileIds)];
 }
 
 function isCloudBaseConfigured(): boolean {
@@ -114,13 +160,12 @@ async function getTempUrlForFileIds(fileIds: string[]): Promise<string | null> {
 
 async function getCloudBaseTempUrlForKey(key: string, sourceUrl?: string): Promise<string> {
   const candidates: string[] = [];
-  if (sourceUrl && isCloudBaseUrl(sourceUrl)) {
-    const fromUrl = buildFileIdFromStoredUrl(sourceUrl);
-    if (fromUrl) candidates.push(fromUrl);
+  if (sourceUrl) {
+    candidates.push(...collectFileIdCandidates(sourceUrl));
   }
   candidates.push(...buildFileIdCandidatesForKey(key));
 
-  const tempUrl = await getTempUrlForFileIds(candidates);
+  const tempUrl = await getTempUrlForFileIds([...new Set(candidates)]);
   if (!tempUrl) {
     throw new Error('CloudBase 获取图片访问地址失败');
   }
@@ -129,7 +174,7 @@ async function getCloudBaseTempUrlForKey(key: string, sourceUrl?: string): Promi
 
 /**
  * 批量把已存（可能已过期）的图片地址刷新为新鲜的临时直连地址。
- * 支持 CloudBase 直连、/blobs、/api/blobs、localhost 等历史形态。
+ * 支持 cloud:// fileID、CloudBase 直连、/blobs、/api/blobs、localhost 等历史形态。
  */
 export async function refreshCloudBaseUrls(urls: string[]): Promise<Map<string, string>> {
   const result = new Map<string, string>();
@@ -139,14 +184,8 @@ export async function refreshCloudBaseUrls(urls: string[]): Promise<Map<string, 
   const entries: Array<{ url: string; fileIds: string[] }> = [];
 
   for (const url of unique) {
-    const fileIds: string[] = [];
-    if (isCloudBaseUrl(url)) {
-      const fromUrl = buildFileIdFromStoredUrl(url);
-      if (fromUrl) fileIds.push(fromUrl);
-    }
-    const key = extractBlobKey(url);
-    if (key) fileIds.push(...buildFileIdCandidatesForKey(key));
-    if (fileIds.length > 0) entries.push({ url, fileIds: [...new Set(fileIds)] });
+    const fileIds = collectFileIdCandidates(url);
+    if (fileIds.length > 0) entries.push({ url, fileIds });
   }
 
   if (entries.length === 0) return result;
@@ -192,7 +231,49 @@ function isSafeBlobKey(key: string): boolean {
   return /^cases\/[^/]+\/.+\.(png|jpg|jpeg|webp)$/i.test(key);
 }
 
-/** GET /api/blobs/:key → 302 到新鲜 CloudBase 临时链接（或本地文件） */
+function contentTypeForKey(key: string): string {
+  if (key.endsWith('.png')) return 'image/png';
+  if (key.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+/** 优先把远端图片字节流式回源，避免 EdgeOne rewrite 对 302 处理异常导致裂图 */
+async function proxyTempUrl(tempUrl: string, key: string): Promise<Response> {
+  try {
+    const upstream = await fetch(tempUrl);
+    if (!upstream.ok || !upstream.body) {
+      console.warn('[blob-access] 回源拉取失败，改用 302:', key, upstream.status);
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: tempUrl,
+          'Cache-Control': 'private, max-age=3600',
+          ...CORS_HEADERS,
+        },
+      });
+    }
+    return new Response(upstream.body, {
+      status: 200,
+      headers: {
+        'Content-Type': upstream.headers.get('Content-Type') || contentTypeForKey(key),
+        'Cache-Control': 'private, max-age=3600',
+        ...CORS_HEADERS,
+      },
+    });
+  } catch (error) {
+    console.warn('[blob-access] 回源异常，改用 302:', key, (error as Error).message);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: tempUrl,
+        'Cache-Control': 'private, max-age=3600',
+        ...CORS_HEADERS,
+      },
+    });
+  }
+}
+
+/** GET /api/blobs/:key → 流式回源（失败时 302）到新鲜 CloudBase 临时链接（或本地文件） */
 export async function handleBlobGetRequest(rawKey: string): Promise<Response> {
   const key = decodeURIComponent(rawKey).replace(/^\/+/, '');
   if (!key || !isSafeBlobKey(key)) {
@@ -204,16 +285,9 @@ export async function handleBlobGetRequest(rawKey: string): Promise<Response> {
   if (adapter === 'cloudbase' || isCloudBaseConfigured()) {
     try {
       const tempUrl = await getCloudBaseTempUrlForKey(key);
-      return new Response(null, {
-        status: 302,
-        headers: {
-          Location: tempUrl,
-          'Cache-Control': 'private, max-age=3600',
-          ...CORS_HEADERS,
-        },
-      });
+      return proxyTempUrl(tempUrl, key);
     } catch (error) {
-      console.error('[blob-access] CloudBase redirect failed:', key, error);
+      console.error('[blob-access] CloudBase proxy failed:', key, error);
       return jsonResponse({ success: false, error: (error as Error).message || '图片读取失败' }, 404);
     }
   }
@@ -224,14 +298,7 @@ export async function handleBlobGetRequest(rawKey: string): Promise<Response> {
     if (isCloudBaseConfigured()) {
       try {
         const tempUrl = await getCloudBaseTempUrlForKey(key);
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: tempUrl,
-            'Cache-Control': 'private, max-age=3600',
-            ...CORS_HEADERS,
-          },
-        });
+        return proxyTempUrl(tempUrl, key);
       } catch {
         // fall through to 404
       }
@@ -240,16 +307,11 @@ export async function handleBlobGetRequest(rawKey: string): Promise<Response> {
   }
 
   const data = await readFile(filePath);
-  const contentType = key.endsWith('.png')
-    ? 'image/png'
-    : key.endsWith('.webp')
-      ? 'image/webp'
-      : 'image/jpeg';
 
   return new Response(data, {
     status: 200,
     headers: {
-      'Content-Type': contentType,
+      'Content-Type': contentTypeForKey(key),
       'Cache-Control': 'public, max-age=86400',
       ...CORS_HEADERS,
     },

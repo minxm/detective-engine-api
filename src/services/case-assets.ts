@@ -1,10 +1,17 @@
 import type { CaseData } from '../types/index.js';
-import { extractBlobKey, refreshCloudBaseUrls, toBlobProxyPath } from './blob-access.js';
+import {
+  extractBlobKey,
+  isUsableDirectImageUrl,
+  refreshCloudBaseUrls,
+  toBlobProxyPath,
+} from './blob-access.js';
 
 /**
- * 返回案件数据前，把其中所有图片地址刷新为新鲜的临时直连地址；
- * 刷新失败但仍能解析出 blob key 时，回退为 /api/blobs 同源代理路径，
- * 避免库存/历史案件因临时链接过期或旧代理路径导致图片加载失败。
+ * 返回案件数据前，把其中所有图片地址刷新为新鲜的临时直连地址。
+ *
+ * 刷新失败时的策略：
+ * - 已是可直连的 http(s)（非 localhost）→ 原样保留，避免把仍可用的库内 URL 改坏
+ * - localhost / /blobs / cloud:// 等无法给浏览器直接用的形态 → 回退 /api/blobs 同源代理
  */
 export async function withFreshCaseImageUrls(caseData: CaseData): Promise<CaseData> {
   const urls: string[] = [];
@@ -25,6 +32,7 @@ export async function withFreshCaseImageUrls(caseData: CaseData): Promise<CaseDa
     if (!url) return url;
     const refreshed = fresh.get(url);
     if (refreshed) return refreshed;
+    if (isUsableDirectImageUrl(url)) return url;
     const key = extractBlobKey(url);
     if (key) return toBlobProxyPath(key);
     return url;
