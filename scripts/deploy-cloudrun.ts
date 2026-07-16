@@ -28,36 +28,53 @@ function writeCloudbaserc(envId: string, serverName: string) {
   console.log(`Wrote ${target} with envId=${envId}`);
 }
 
-function runCli(argv: string[]) {
-  // 灰度提示默认选「否」；--force 在部分 CLI 版本仍会交互
-  const input = Buffer.from('\n');
+function shellQuote(arg: string): string {
+  if (process.platform === 'win32') {
+    return /[\s"]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg;
+  }
+  return /[^A-Za-z0-9_\/:=+.,@%-]/.test(arg) ? `'${arg.replace(/'/g, `'\\''`)}'` : arg;
+}
+
+function runTcb(argv: string[]): number {
   const env = { ...process.env, CI: 'true', FORCE_COLOR: '0' };
+  const onGitHub = Boolean(process.env.GITHUB_ACTIONS);
+  const safeArgs = argv.map((a) => (/^AKID/.test(a) ? '***' : a)).join(' ');
 
-  // 优先使用本机全局 tcb，避免 npx 走内网 npm 源失败
-  const viaGlobal = spawnSync('tcb', argv, {
-    stdio: ['pipe', 'inherit', 'inherit'],
-    env,
-    shell: process.platform === 'win32',
-    input,
-  });
-  if (viaGlobal.status === 0) return;
-  if (viaGlobal.error?.message && /ENOENT|not recognized/i.test(viaGlobal.error.message)) {
-    // fall through to npx
-  } else if (viaGlobal.status !== 0 && viaGlobal.status != null) {
-    const safe = argv.map((a) => (/^AKID|^[A-Za-z0-9]{32,}$/.test(a) ? '***' : a)).join(' ');
-    throw new Error(`tcb ${safe} failed with exit code ${viaGlobal.status}`);
+  // GitHub Actions 无 TTY：直接 inherit，避免管道 EOF 干扰上传
+  if (onGitHub) {
+    let result = spawnSync('tcb', argv, { stdio: 'inherit', env, shell: true });
+    if (result.status === 0) return 0;
+    result = spawnSync('npx', ['--yes', '-p', '@cloudbase/cli', 'tcb', ...argv], {
+      stdio: 'inherit',
+      env,
+      shell: true,
+    });
+    if (result.status !== 0) {
+      throw new Error(`tcb ${safeArgs} failed with exit code ${result.status ?? 'unknown'}`);
+    }
+    return 0;
   }
 
-  const result = spawnSync('npx', ['--yes', '-p', '@cloudbase/cli', 'tcb', ...argv], {
-    stdio: ['pipe', 'inherit', 'inherit'],
-    env,
-    shell: process.platform === 'win32',
-    input,
-  });
+  // 本地 Windows：--force 仍可能弹出灰度确认，用 echo.| 选默认「否」
+  const args = argv.map(shellQuote).join(' ');
+  const command =
+    process.platform === 'win32' ? `echo.| tcb ${args}` : `printf '\\n' | tcb ${args}`;
+  let result = spawnSync(command, { stdio: 'inherit', env, shell: true });
+  if (result.status === 0) return 0;
+
+  const npxCmd =
+    process.platform === 'win32'
+      ? `echo.| npx --yes -p @cloudbase/cli tcb ${args}`
+      : `printf '\\n' | npx --yes -p @cloudbase/cli tcb ${args}`;
+  result = spawnSync(npxCmd, { stdio: 'inherit', env, shell: true });
   if (result.status !== 0) {
-    const safe = argv.map((a) => (/^AKID|^[A-Za-z0-9]{32,}$/.test(a) ? '***' : a)).join(' ');
-    throw new Error(`tcb ${safe} failed with exit code ${result.status ?? 'unknown'}`);
+    throw new Error(`tcb ${safeArgs} failed with exit code ${result.status ?? 'unknown'}`);
   }
+  return 0;
+}
+
+function runCli(argv: string[]) {
+  runTcb(argv);
 }
 
 const READY_STATUSES = new Set(['normal', 'running']);
