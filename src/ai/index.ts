@@ -14,11 +14,11 @@ const client = new OpenAI({
   maxRetries: 0,
 });
 
-/** 结案评分专用：短超时，避免 EdgeOne/云托管网关先断开 */
+/** 结案评分：异步任务内调用，可用较长超时跑完整配置模型 */
 const evaluateClient = new OpenAI({
   apiKey: AI_CONFIG.apiKey,
   baseURL: AI_CONFIG.baseURL,
-  timeout: 20000,
+  timeout: 300000,
   maxRetries: 0,
 });
 
@@ -29,17 +29,6 @@ const caseClient = new OpenAI({
   timeout: 360000,
   maxRetries: 0,
 });
-
-/** R1 等推理模型过慢，结案强制改用快速聊天模型 */
-function resolveEvaluateModel(): string {
-  const configured = AI_CONFIG.evaluateModel?.trim() || AI_CONFIG.chatModel;
-  if (/deepseek-r1|o1-|reasoner|qwq/i.test(configured)) {
-    const fast = AI_CONFIG.chatModel || 'THUDM/GLM-4-9B-0414';
-    console.warn(`[evaluate] 配置模型 ${configured} 过慢，结案改用 ${fast}`);
-    return fast;
-  }
-  return configured;
-}
 
 function heuristicEvaluation(caseData: CaseData, userDeduction: string): CaseEvaluation {
   const killerCorrect = userDeduction.includes(caseData.truth.killer);
@@ -331,7 +320,7 @@ export async function evaluateDeduction(
     return heuristicEvaluation(caseData, userDeduction);
   }
 
-  const evaluateModel = resolveEvaluateModel();
+  const evaluateModel = AI_CONFIG.evaluateModel?.trim() || AI_CONFIG.chatModel;
   const criteria = caseData.scoringCriteria?.categories
     .map(c => `${c.name}(满分${c.maxPoints})：${c.criteria.join('；')}`)
     .join('\n') ?? '真凶识别40分，手法还原25分，动机分析20分，证据运用15分';
@@ -355,17 +344,18 @@ ${criteria}
   "killerCorrect": true/false,
   "missedClues": ["遗漏的关键线索"]
 }
-只输出 JSON，不要解释。${/qwen3/i.test(evaluateModel) ? '\n/no_think' : ''}`;
+只输出 JSON，不要解释。${/qwen3|deepseek-r1/i.test(evaluateModel) ? '\n/no_think' : ''}`;
 
   const started = Date.now();
+  const disableThinking = /deepseek-r1|qwen3/i.test(evaluateModel);
   try {
     const completion = await evaluateClient.chat.completions.create({
       model: evaluateModel,
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2,
-      max_tokens: 800,
+      temperature: 0.3,
+      max_tokens: 1200,
       stream: false,
-      ...( /qwen3/i.test(evaluateModel) ? { enable_thinking: false } : {}),
+      ...(disableThinking ? { enable_thinking: false } : {}),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any) as {
       choices: Array<{ message?: { content?: string | null } }>;

@@ -15,6 +15,7 @@ import type {
   LoginAuditRecord,
   OnlinePresenceRecord,
   RefillJob,
+  ScoreJob,
 } from '../types/index.js';
 import {
   HISTORY_LIST_FIELD_PROJECTION,
@@ -37,6 +38,7 @@ const COLLECTIONS = {
   generationJobs: 'generation_jobs',
   onlinePresence: 'online_presence',
   refillJobs: 'refill_jobs',
+  scoreJobs: 'score_jobs',
 } as const;
 
 function asDoc<T extends { _id: string }>(data: T | T[] | undefined | null): T | null {
@@ -536,5 +538,13 @@ export class CloudBaseDbAdapter implements DatabaseAdapter {
       return asDoc<RefillJob>(res.data);
     },
     upsert: async (job: RefillJob) => this.setRecord(COLLECTIONS.refillJobs, job),
+  };
+
+  scoreJobs = {
+    findById: async (id: string) => {
+      const res = await this.collection(COLLECTIONS.scoreJobs).doc(id).get();
+      return asDoc<ScoreJob>(res.data);
+    },
+    upsert: async (job: ScoreJob) => this.setRecord(COLLECTIONS.scoreJobs, job),
   };
 }

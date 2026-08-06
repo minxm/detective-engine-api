@@ -12,6 +12,7 @@ import type {
   GenerationJob,
   OnlinePresenceRecord,
   RefillJob,
+  ScoreJob,
 } from '../types/index.js';
 import type { PaginatedResult } from '../utils/pagination.js';
 
@@ -116,6 +117,10 @@ export interface DatabaseAdapter {
   refillJobs: {
     findById(id: string): Promise<RefillJob | null>;
     upsert(job: RefillJob): Promise<RefillJob>;
+  };
+  scoreJobs: {
+    findById(id: string): Promise<ScoreJob | null>;
+    upsert(job: ScoreJob): Promise<ScoreJob>;
   };
 }
 

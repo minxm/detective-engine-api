@@ -5,7 +5,7 @@ import { handleCaseStatus } from '../../cloud-functions/case/status.js';
 import { handleCaseGet } from '../../cloud-functions/case/get.js';
 import { handleCaseInventoryHint } from '../../cloud-functions/case/inventory-hint.js';
 import { handleInterrogate } from '../../cloud-functions/ai/interrogate.js';
-import { handleScore } from '../../cloud-functions/ai/score.js';
+import { handleScore, handleScoreStatus } from '../../cloud-functions/ai/score.js';
 import { handleHistoryList, handleHistoryItem, handleHistoryStats } from '../../cloud-functions/history/list.js';
 import { handleRankList } from '../../cloud-functions/rank/list.js';
 import { handleUserStats } from '../../cloud-functions/auth/stats.js';
@@ -46,6 +46,7 @@ const routes: Record<string, RouteHandler> = {
   'GET /api/case/:id': handleCaseGet,
   'POST /api/interrogate': handleInterrogate,
   'POST /api/score': handleScore,
+  'GET /api/score/status': handleScoreStatus,
   'GET /api/history': handleHistoryList,
   'GET /api/history/stats': handleHistoryStats,
   'GET /api/history/item': handleHistoryItem,

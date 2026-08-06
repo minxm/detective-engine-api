@@ -3,8 +3,7 @@ export const AI_CONFIG = {
   baseURL: process.env.SILICONFLOW_BASE_URL ?? 'https://api.siliconflow.cn/v1',
   chatModel: process.env.AI_CHAT_MODEL ?? 'THUDM/GLM-4-9B-0414',
   caseModel: process.env.AI_CASE_MODEL ?? 'Qwen/Qwen3-8B',
-  // 结案评分走网关，禁止默认用 R1 等慢速推理模型
-  evaluateModel: process.env.AI_EVALUATE_MODEL ?? 'THUDM/GLM-4-9B-0414',
+  evaluateModel: process.env.AI_EVALUATE_MODEL ?? 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
   imageModel: process.env.AI_IMAGE_MODEL ?? 'Kwai-Kolors/Kolors',
 };
 

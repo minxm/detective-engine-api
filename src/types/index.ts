@@ -521,6 +521,18 @@ export interface RefillJob {
   updatedAt: number;
 }
 
+/** 结案评分异步任务（避免网关同步等待慢速模型超时） */
+export interface ScoreJob {
+  _id: string;
+  status: 'pending' | 'running' | 'ready' | 'failed';
+  userId?: string;
+  caseId: string;
+  evaluation?: CaseEvaluation;
+  error?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** 预生成案例领取记录（同一用户对同一案件仅记录一次） */
 export interface ClaimRecord {
   _id: string;

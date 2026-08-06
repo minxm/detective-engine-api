@@ -15,6 +15,7 @@ import type {
   LoginAuditRecord,
   OnlinePresenceRecord,
   RefillJob,
+  ScoreJob,
   SessionRecord,
   UserRecord,
 } from '../types/index.js';
@@ -33,6 +34,7 @@ type Store = {
   generationJobs: GenerationJob[];
   onlinePresence: OnlinePresenceRecord[];
   refillJobs: RefillJob[];
+  scoreJobs: ScoreJob[];
 };
 
 const DEFAULT_STORE: Store = {
@@ -48,6 +50,7 @@ const DEFAULT_STORE: Store = {
   generationJobs: [],
   onlinePresence: [],
   refillJobs: [],
+  scoreJobs: [],
 };
 
 function clone<T>(value: T): T {
@@ -426,6 +429,21 @@ export class MemoryDatabase implements DatabaseAdapter {
       const idx = this.store.refillJobs.findIndex((j) => j._id === job._id);
       if (idx >= 0) this.store.refillJobs[idx] = job;
       else this.store.refillJobs.push(job);
+      await this.persist();
+      return job;
+    },
+  };
+
+  scoreJobs = {
+    findById: async (id: string) => {
+      await this.ensureLoaded();
+      return this.store.scoreJobs.find((j) => j._id === id) ?? null;
+    },
+    upsert: async (job: ScoreJob) => {
+      await this.ensureLoaded();
+      const idx = this.store.scoreJobs.findIndex((j) => j._id === job._id);
+      if (idx >= 0) this.store.scoreJobs[idx] = job;
+      else this.store.scoreJobs.push(job);
       await this.persist();
       return job;
     },

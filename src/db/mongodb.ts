@@ -17,6 +17,7 @@ import type {
   GenerationJob,
   OnlinePresenceRecord,
   RefillJob,
+  ScoreJob,
 } from '../types/index.js';
 import { toHistoryListItem } from '../services/history-list.js';
 
@@ -33,6 +34,7 @@ const COLLECTIONS = {
   generationJobs: 'generation_jobs',
   onlinePresence: 'online_presence',
   refillJobs: 'refill_jobs',
+  scoreJobs: 'score_jobs',
 } as const;
 
 export class MongoDbAdapter implements DatabaseAdapter {
@@ -433,6 +435,18 @@ export class MongoDbAdapter implements DatabaseAdapter {
     },
     upsert: async (job: RefillJob) => {
       const col = await this.collection<RefillJob>(COLLECTIONS.refillJobs);
+      await col.updateOne({ _id: job._id }, { $set: job }, { upsert: true });
+      return job;
+    },
+  };
+
+  scoreJobs = {
+    findById: async (id: string) => {
+      const col = await this.collection<ScoreJob>(COLLECTIONS.scoreJobs);
+      return col.findOne({ _id: id });
+    },
+    upsert: async (job: ScoreJob) => {
+      const col = await this.collection<ScoreJob>(COLLECTIONS.scoreJobs);
       await col.updateOne({ _id: job._id }, { $set: job }, { upsert: true });
       return job;
     },
