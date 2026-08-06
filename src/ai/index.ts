@@ -14,6 +14,14 @@ const client = new OpenAI({
   maxRetries: 0,
 });
 
+/** 结案评分专用：短超时，避免 EdgeOne/云托管网关先断开 */
+const evaluateClient = new OpenAI({
+  apiKey: AI_CONFIG.apiKey,
+  baseURL: AI_CONFIG.baseURL,
+  timeout: 20000,
+  maxRetries: 0,
+});
+
 /** 案件生成专用客户端：更长超时，避免大 JSON 未完成就回退固定模板 */
 const caseClient = new OpenAI({
   apiKey: AI_CONFIG.apiKey,
@@ -21,6 +29,33 @@ const caseClient = new OpenAI({
   timeout: 360000,
   maxRetries: 0,
 });
+
+/** R1 等推理模型过慢，结案强制改用快速聊天模型 */
+function resolveEvaluateModel(): string {
+  const configured = AI_CONFIG.evaluateModel?.trim() || AI_CONFIG.chatModel;
+  if (/deepseek-r1|o1-|reasoner|qwq/i.test(configured)) {
+    const fast = AI_CONFIG.chatModel || 'THUDM/GLM-4-9B-0414';
+    console.warn(`[evaluate] 配置模型 ${configured} 过慢，结案改用 ${fast}`);
+    return fast;
+  }
+  return configured;
+}
+
+function heuristicEvaluation(caseData: CaseData, userDeduction: string): CaseEvaluation {
+  const killerCorrect = userDeduction.includes(caseData.truth.killer);
+  const score = killerCorrect ? 72 : 45;
+  return {
+    score,
+    breakdown: { logic: score, evidence: score - 5, deduction: score + 2 },
+    feedback: killerCorrect
+      ? '推理方向正确。系统评分通道繁忙，已给出基础评分；细节仍可继续加强。'
+      : '真凶判断可能有误。系统评分通道繁忙，已给出基础评分；请重新梳理线索。',
+    rating: killerCorrect ? '合格侦探' : '需要练习',
+    killerCorrect,
+    missedClues: caseData.truth.keyClues.slice(0, 1),
+    userDeduction,
+  };
+}
 
 function extractJson(content: string): string {
   let text = content.trim();
@@ -293,19 +328,10 @@ export async function evaluateDeduction(
 ): Promise<CaseEvaluation> {
   const configError = getAiConfigError();
   if (configError) {
-    const killerCorrect = userDeduction.includes(caseData.truth.killer);
-    const score = killerCorrect ? 72 : 45;
-    return {
-      score,
-      breakdown: { logic: score, evidence: score - 5, deduction: score + 2 },
-      feedback: killerCorrect ? '推理方向正确，但细节仍可加强。' : '真凶判断有误，请重新梳理线索。',
-      rating: killerCorrect ? '合格侦探' : '需要练习',
-      killerCorrect,
-      missedClues: caseData.truth.keyClues.slice(0, 1),
-      userDeduction,
-    };
+    return heuristicEvaluation(caseData, userDeduction);
   }
 
+  const evaluateModel = resolveEvaluateModel();
   const criteria = caseData.scoringCriteria?.categories
     .map(c => `${c.name}(满分${c.maxPoints})：${c.criteria.join('；')}`)
     .join('\n') ?? '真凶识别40分，手法还原25分，动机分析20分，证据运用15分';
@@ -329,54 +355,70 @@ ${criteria}
   "killerCorrect": true/false,
   "missedClues": ["遗漏的关键线索"]
 }
-只输出 JSON，不要解释。${/qwen3|deepseek-r1/i.test(AI_CONFIG.evaluateModel) ? '\n/no_think' : ''}`;
+只输出 JSON，不要解释。${/qwen3/i.test(evaluateModel) ? '\n/no_think' : ''}`;
 
   const started = Date.now();
-  const disableThinking = /deepseek-r1|qwen3/i.test(AI_CONFIG.evaluateModel);
-  const completion = await withRetry(
-    async () => {
-      const res = await client.chat.completions.create({
-        model: AI_CONFIG.evaluateModel,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 1200,
-        stream: false,
-        ...(disableThinking ? { enable_thinking: false } : {}),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
-      return res as Awaited<ReturnType<typeof client.chat.completions.create>> & {
-        choices: Array<{ message?: { content?: string | null } }>;
-        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
-      };
-    },
-    { retries: 1, delayMs: 800 },
-  );
-  const raw = completion.choices[0]?.message?.content ?? '';
-  const parsed = JSON.parse(extractJson(raw)) as CaseEvaluation;
+  try {
+    const completion = await evaluateClient.chat.completions.create({
+      model: evaluateModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2,
+      max_tokens: 800,
+      stream: false,
+      ...( /qwen3/i.test(evaluateModel) ? { enable_thinking: false } : {}),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any) as {
+      choices: Array<{ message?: { content?: string | null } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
 
-  await logAiCall({
-    type: 'evaluate',
-    model: AI_CONFIG.evaluateModel,
-    userId,
-    caseId: caseData.id,
-    usage: completion.usage,
-    durationMs: Date.now() - started,
-  });
+    const raw = completion.choices[0]?.message?.content ?? '';
+    const parsed = JSON.parse(extractJson(raw)) as CaseEvaluation;
 
-  const thresholds = caseData.scoringCriteria?.rankThresholds ?? [
-    { minScore: 95, rank: '传奇侦探' },
-    { minScore: 85, rank: '资深侦探' },
-    { minScore: 70, rank: '优秀推理' },
-    { minScore: 55, rank: '合格侦探' },
-    { minScore: 0, rank: '见习侦探' },
-  ];
-  const defaultRating = thresholds.find(t => (parsed.score ?? 0) >= t.minScore)?.rank ?? '合格侦探';
+    await logAiCall({
+      type: 'evaluate',
+      model: evaluateModel,
+      userId,
+      caseId: caseData.id,
+      usage: completion.usage,
+      durationMs: Date.now() - started,
+    });
 
-  return {
-    ...parsed,
-    rating: parsed.rating || defaultRating,
-    userDeduction,
-  };
+    const thresholds = caseData.scoringCriteria?.rankThresholds ?? [
+      { minScore: 95, rank: '传奇侦探' },
+      { minScore: 85, rank: '资深侦探' },
+      { minScore: 70, rank: '优秀推理' },
+      { minScore: 55, rank: '合格侦探' },
+      { minScore: 0, rank: '见习侦探' },
+    ];
+    const defaultRating = thresholds.find(t => (parsed.score ?? 0) >= t.minScore)?.rank ?? '合格侦探';
+
+    return {
+      ...parsed,
+      rating: parsed.rating || defaultRating,
+      userDeduction,
+    };
+  } catch (error) {
+    console.warn(
+      '[evaluate] AI 评分失败/超时，回退启发式评分:',
+      (error as Error).message,
+      `elapsed=${Date.now() - started}ms`,
+    );
+    const fallback = heuristicEvaluation(caseData, userDeduction);
+    try {
+      await logAiCall({
+        type: 'evaluate',
+        model: `${evaluateModel}:fallback`,
+        userId,
+        caseId: caseData.id,
+        usage: undefined,
+        durationMs: Date.now() - started,
+      });
+    } catch {
+      // 日志失败不影响结案
+    }
+    return fallback;
+  }
 }
 
 // ─── 构建审讯系统提示词（利用心理档案数据）────────────────────────────────

@@ -28,7 +28,7 @@ const DEFAULTS: Record<string, string> = {
   SILICONFLOW_BASE_URL: 'https://api.siliconflow.cn/v1',
   AI_CHAT_MODEL: 'THUDM/GLM-4-9B-0414',
   AI_CASE_MODEL: 'Qwen/Qwen3-8B',
-  AI_EVALUATE_MODEL: 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
+  AI_EVALUATE_MODEL: 'THUDM/GLM-4-9B-0414',
   AI_IMAGE_MODEL: 'Kwai-Kolors/Kolors',
   TCB_REGION: 'ap-shanghai',
   DB_ADAPTER: 'cloudbase',
