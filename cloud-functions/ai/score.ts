@@ -38,7 +38,7 @@ export async function handleScore(ctx: CloudContext): Promise<Response> {
   };
 
   if (!body.userDeduction?.trim()) {
-    return jsonResponse({ success: false, error: '缺少评分参数' }, 400);
+    return jsonResponse({ success: false, error: '缺少推理内容，请先填写结案推理' }, 400);
   }
 
   try {
@@ -55,7 +55,7 @@ export async function handleScore(ctx: CloudContext): Promise<Response> {
       caseData = slimCaseDataForScore(caseRecordToCaseData(record));
     }
     if (!caseData) {
-      return jsonResponse({ success: false, error: '缺少评分参数' }, 400);
+      return jsonResponse({ success: false, error: '缺少案件数据，请刷新后重试' }, 400);
     }
 
     // 评分 AI 本身已有重试；外层不再套重试，避免网关超时（移动端尤甚）
