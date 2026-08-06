@@ -19,6 +19,7 @@ import { handleAdminDashboard } from '../../cloud-functions/admin/dashboard.js';
 import { handleInventoryRefill, handleInventoryRefillStatus } from '../../cloud-functions/admin/inventory-refill.js';
 import {
   handleAdminOnlineUsers,
+  handleAdminUsers,
   handleAdminInventoryList,
   handleAdminInventoryClaims,
   handleAdminAiLogs,
@@ -60,6 +61,7 @@ const routes: Record<string, RouteHandler> = {
   'GET /api/admin/status': handleAdminStatus,
   'GET /api/admin/dashboard': handleAdminDashboard,
   'GET /api/admin/online-users': handleAdminOnlineUsers,
+  'GET /api/admin/users': handleAdminUsers,
   'GET /api/admin/inventory': handleAdminInventoryList,
   'GET /api/admin/inventory/claims': handleAdminInventoryClaims,
   'GET /api/admin/ai-logs': handleAdminAiLogs,

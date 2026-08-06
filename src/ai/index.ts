@@ -328,17 +328,28 @@ ${criteria}
   "rating": "评级称号",
   "killerCorrect": true/false,
   "missedClues": ["遗漏的关键线索"]
-}`;
+}
+只输出 JSON，不要解释。${/qwen3|deepseek-r1/i.test(AI_CONFIG.evaluateModel) ? '\n/no_think' : ''}`;
 
   const started = Date.now();
+  const disableThinking = /deepseek-r1|qwen3/i.test(AI_CONFIG.evaluateModel);
   const completion = await withRetry(
-    () =>
-      client.chat.completions.create({
+    async () => {
+      const res = await client.chat.completions.create({
         model: AI_CONFIG.evaluateModel,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.3,
-      }),
-    { retries: 3, delayMs: 600 },
+        max_tokens: 1200,
+        stream: false,
+        ...(disableThinking ? { enable_thinking: false } : {}),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+      return res as Awaited<ReturnType<typeof client.chat.completions.create>> & {
+        choices: Array<{ message?: { content?: string | null } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      };
+    },
+    { retries: 1, delayMs: 800 },
   );
   const raw = completion.choices[0]?.message?.content ?? '';
   const parsed = JSON.parse(extractJson(raw)) as CaseEvaluation;

@@ -95,6 +95,20 @@ export class CloudBaseDbAdapter implements DatabaseAdapter {
       const res = await this.collection(COLLECTIONS.users).limit(limit).get();
       return (res.data ?? []) as UserRecord[];
     },
+    listPaginated: async (query: { page?: number; limit?: number } = {}) => {
+      const page = Math.max(1, query.page ?? 1);
+      const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+      const col = this.collection(COLLECTIONS.users);
+      let rows: UserRecord[] = [];
+      try {
+        const res = await col.orderBy('createdAt', 'desc').limit(1000).get();
+        rows = (res.data ?? []) as UserRecord[];
+      } catch {
+        const res = await col.limit(1000).get();
+        rows = ((res.data ?? []) as UserRecord[]).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      }
+      return paginateArray(rows, page, limit);
+    },
   };
 
   cases = {

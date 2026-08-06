@@ -95,6 +95,17 @@ export class MongoDbAdapter implements DatabaseAdapter {
       const col = await this.collection<UserRecord>(COLLECTIONS.users);
       return col.find().limit(limit).toArray();
     },
+    listPaginated: async (query: { page?: number; limit?: number } = {}) => {
+      const page = Math.max(1, query.page ?? 1);
+      const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+      const skip = (page - 1) * limit;
+      const col = await this.collection<UserRecord>(COLLECTIONS.users);
+      const [items, total] = await Promise.all([
+        col.find().sort({ createdAt: -1 }).skip(skip).limit(limit).toArray(),
+        col.countDocuments(),
+      ]);
+      return buildPaginatedResult(items, total, page, limit);
+    },
   };
 
   cases = {

@@ -48,6 +48,7 @@ export interface DatabaseAdapter {
     findByUsername(username: string): Promise<UserRecord | null>;
     upsert(user: UserRecord): Promise<UserRecord>;
     list(limit?: number): Promise<UserRecord[]>;
+    listPaginated(query?: { page?: number; limit?: number }): Promise<PaginatedResult<UserRecord>>;
   };
   cases: {
     findById(id: string): Promise<CaseRecord | null>;

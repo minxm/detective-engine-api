@@ -101,6 +101,13 @@ export class MemoryDatabase implements DatabaseAdapter {
       await this.ensureLoaded();
       return this.store.users.slice(0, limit);
     },
+    listPaginated: async (query: { page?: number; limit?: number } = {}) => {
+      await this.ensureLoaded();
+      const page = Math.max(1, query.page ?? 1);
+      const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+      const rows = [...this.store.users].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      return paginateArray(rows, page, limit);
+    },
   };
 
   cases = {

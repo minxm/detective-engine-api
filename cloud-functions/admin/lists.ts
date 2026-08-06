@@ -17,6 +17,25 @@ export async function handleAdminOnlineUsers(ctx: CloudContext): Promise<Respons
   return jsonResponse({ success: true, ...result });
 }
 
+/** 注册用户分页列表（不含密码哈希） */
+export async function handleAdminUsers(ctx: CloudContext): Promise<Response> {
+  if (!(await requireAdminUser(ctx.headers))) return adminForbidden();
+  const { page, limit } = parsePageQuery(ctx.query);
+  const db = getDatabase();
+  const result = await db.users.listPaginated({ page, limit });
+  const items = result.items.map((user) => ({
+    _id: user._id,
+    username: user.username,
+    nickname: user.nickname,
+    role: user.role,
+    score: user.score ?? 0,
+    casesCompleted: user.casesCompleted ?? 0,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  }));
+  return jsonResponse({ success: true, ...result, items });
+}
+
 export async function handleAdminInventoryList(ctx: CloudContext): Promise<Response> {
   if (!(await requireAdminUser(ctx.headers))) return adminForbidden();
   const { page, limit } = parsePageQuery(ctx.query);
