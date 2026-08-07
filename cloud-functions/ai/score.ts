@@ -110,15 +110,23 @@ async function runScoreJob(params: {
     await patchScoreJob(jobId, { status: 'running' });
     const evaluation = await evaluateDeduction(caseData, userDeduction, userId);
     evaluation.rating = evaluation.rating || getScoreRating(evaluation.score);
-    await finalizeScoreSideEffects({
-      userId,
-      caseData,
-      evaluation,
-      displayName,
-      nickname,
-      progress,
-    });
+    evaluation.userDeduction = userDeduction;
+
+    // 先标记 ready，避免轮询在写历史/会话时一直等不到结果
     await patchScoreJob(jobId, { status: 'ready', evaluation, error: undefined });
+
+    try {
+      await finalizeScoreSideEffects({
+        userId,
+        caseData,
+        evaluation,
+        displayName,
+        nickname,
+        progress,
+      });
+    } catch (sideEffectError) {
+      console.error('[score] side effects failed after evaluation ready:', jobId, (sideEffectError as Error).message);
+    }
   } catch (error) {
     const message = (error as Error).message || '评分失败，请稍后重试';
     console.error('[score] job failed:', jobId, message);
@@ -198,6 +206,32 @@ export async function handleScoreStatus(ctx: CloudContext): Promise<Response> {
     const job = await getDatabase().scoreJobs.findById(jobId);
     if (!job) {
       return jsonResponse({ success: false, error: '评分任务不存在' }, 404);
+    }
+
+    // 任务仍显示进行中，但历史已结案 → 视为 ready（避免前端误报失败）
+    if (job.status !== 'ready' && job.status !== 'failed' && job.userId) {
+      const history = await findCaseHistory(job.userId, job.caseId);
+      if (history?.status === 'completed' && history.score != null) {
+        const evaluation =
+          job.evaluation ??
+          ({
+            score: history.score,
+            rating: history.rating,
+            killerCorrect: history.killerCorrect ?? undefined,
+            feedback: '评审已完成，可在档案页查看详情。',
+            breakdown: {},
+            missedClues: [],
+          } as import('../../src/types/index.js').CaseEvaluation);
+
+        return jsonResponse({
+          success: true,
+          status: 'ready',
+          jobId: job._id,
+          caseId: job.caseId,
+          evaluation,
+          error: job.error,
+        });
+      }
     }
 
     return jsonResponse({
