@@ -38,13 +38,13 @@ function shellQuote(arg: string): string {
 function runTcb(argv: string[]): number {
   const env = { ...process.env, CI: 'true', FORCE_COLOR: '0' };
   const onGitHub = Boolean(process.env.GITHUB_ACTIONS);
-  const safeArgs = argv.map((a) => (/^AKID/.test(a) ? '***' : a)).join(' ');
+  const args = ['--yes', ...argv];
+  const safeArgs = args.map((a) => (/^AKID/.test(a) ? '***' : a)).join(' ');
 
-  // GitHub Actions 无 TTY：直接 inherit，避免管道 EOF 干扰上传
   if (onGitHub) {
-    let result = spawnSync('tcb', argv, { stdio: 'inherit', env, shell: true });
+    let result = spawnSync('tcb', args, { stdio: 'inherit', env, shell: true });
     if (result.status === 0) return 0;
-    result = spawnSync('npx', ['--yes', '-p', '@cloudbase/cli', 'tcb', ...argv], {
+    result = spawnSync('npx', ['--yes', '-p', '@cloudbase/cli', 'tcb', ...args], {
       stdio: 'inherit',
       env,
       shell: true,
@@ -55,17 +55,16 @@ function runTcb(argv: string[]): number {
     return 0;
   }
 
-  // 本地 Windows：--force 仍可能弹出灰度确认，用 echo.| 选默认「否」
-  const args = argv.map(shellQuote).join(' ');
+  const quoted = args.map(shellQuote).join(' ');
   const command =
-    process.platform === 'win32' ? `echo.| tcb ${args}` : `printf '\\n' | tcb ${args}`;
+    process.platform === 'win32' ? `echo.| tcb ${quoted}` : `printf '\\n' | tcb ${quoted}`;
   let result = spawnSync(command, { stdio: 'inherit', env, shell: true });
   if (result.status === 0) return 0;
 
   const npxCmd =
     process.platform === 'win32'
-      ? `echo.| npx --yes -p @cloudbase/cli tcb ${args}`
-      : `printf '\\n' | npx --yes -p @cloudbase/cli tcb ${args}`;
+      ? `echo.| npx --yes -p @cloudbase/cli tcb ${quoted}`
+      : `printf '\\n' | npx --yes -p @cloudbase/cli tcb ${quoted}`;
   result = spawnSync(npxCmd, { stdio: 'inherit', env, shell: true });
   if (result.status !== 0) {
     throw new Error(`tcb ${safeArgs} failed with exit code ${result.status ?? 'unknown'}`);
@@ -107,40 +106,11 @@ async function getPrimaryOnlineVersion(
   return pickPrimaryOnlineVersion(detail.OnlineVersionInfos);
 }
 
-async function waitForNewOnlineVersion(
-  client: InstanceType<typeof TcbrClient>,
-  envId: string,
-  serverName: string,
-  previous: OnlineVersion | undefined,
-  maxWaitMs = 300_000,
-): Promise<OnlineVersion> {
-  const previousKey = `${previous?.VersionName ?? ''}|${previous?.ImageUrl ?? ''}`;
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    const current = await getPrimaryOnlineVersion(client, envId, serverName);
-    const currentKey = `${current?.VersionName ?? ''}|${current?.ImageUrl ?? ''}`;
-    if (current?.ImageUrl?.trim() && currentKey !== previousKey) {
-      console.log(
-        `Online version switched: ${previous?.VersionName ?? '(none)'} -> ${current?.VersionName ?? '(unknown)'}`,
-      );
-      return current;
-    }
-    await sleep(10_000);
-  }
-
-  const fallback = await getPrimaryOnlineVersion(client, envId, serverName);
-  if (fallback?.ImageUrl?.trim()) {
-    console.warn('[deploy-cloudrun] Online version did not change after deploy; continuing with current online version');
-    return fallback;
-  }
-  throw new Error('Timed out waiting for online Cloud Run version after deploy');
-}
-
 async function waitForServerReady(
   client: InstanceType<typeof TcbrClient>,
   envId: string,
   serverName: string,
-  maxWaitMs = 300_000
+  maxWaitMs = 300_000,
 ) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
@@ -160,7 +130,7 @@ async function waitForServerReady(
   throw new Error('Timed out waiting for Cloud Run service to become ready');
 }
 
-async function syncServerConfig(
+async function syncServerEnv(
   client: InstanceType<typeof TcbrClient>,
   envId: string,
   serverName: string,
@@ -168,7 +138,7 @@ async function syncServerConfig(
   imageUrl: string,
 ) {
   const envMap = buildEnvMap();
-  console.log(`Syncing ${Object.keys(envMap).length} environment variables to ${imageUrl}`);
+  console.log(`Syncing ${Object.keys(envMap).length} environment variables onto ${imageUrl}`);
 
   await client.UpdateCloudRunServer({
     EnvId: envId,
@@ -188,28 +158,45 @@ async function syncServerConfig(
       { Key: 'MaxNum', IntValue: 5 },
     ],
   });
-
-  return client.DescribeCloudRunServerDetail({ EnvId: envId, ServerName: serverName });
 }
 
-async function verifyDeployedService(domain: string, expectedBuildSha?: string) {
-  const base = domain.startsWith('http') ? domain.replace(/\/$/, '') : `https://${domain.replace(/\/$/, '')}`;
-  const healthRes = await fetch(`${base}/health`);
-  if (!healthRes.ok) {
-    throw new Error(`Deploy verification failed: /health returned ${healthRes.status}`);
-  }
-  const health = (await healthRes.json()) as { buildSha?: string | null };
-  if (expectedBuildSha && health.buildSha !== expectedBuildSha) {
-    throw new Error(
-      `Deploy verification failed: expected buildSha ${expectedBuildSha}, got ${health.buildSha ?? 'null'}`,
-    );
+function serviceBaseUrl(domain: string): string {
+  return domain.startsWith('http') ? domain.replace(/\/$/, '') : `https://${domain.replace(/\/$/, '')}`;
+}
+
+async function waitForLiveBuild(domain: string, expectedBuildSha: string | undefined, maxWaitMs = 600_000) {
+  const base = serviceBaseUrl(domain);
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const healthRes = await fetch(`${base}/health`);
+      if (!healthRes.ok) {
+        console.log(`Waiting for /health (${healthRes.status})...`);
+        await sleep(15_000);
+        continue;
+      }
+      const health = (await healthRes.json()) as { buildSha?: string | null };
+      const usersRes = await fetch(`${base}/api/admin/users?page=1&limit=1`);
+      const buildOk = !expectedBuildSha || health.buildSha === expectedBuildSha;
+      const routeOk = usersRes.status !== 404;
+      console.log(
+        `Probe: buildSha=${health.buildSha ?? 'null'} admin/users=${usersRes.status} buildOk=${buildOk} routeOk=${routeOk}`,
+      );
+      if (buildOk && routeOk) {
+        console.log('Deploy verification ok');
+        return;
+      }
+    } catch (error) {
+      console.log(`Probe failed: ${(error as Error).message}`);
+    }
+    await sleep(15_000);
   }
 
-  const usersRes = await fetch(`${base}/api/admin/users?page=1&limit=1`);
-  if (usersRes.status === 404) {
-    throw new Error('Deploy verification failed: GET /api/admin/users still returns 404');
-  }
-  console.log(`Deploy verification ok: buildSha=${health.buildSha ?? 'null'}, admin/users=${usersRes.status}`);
+  throw new Error(
+    expectedBuildSha
+      ? `Deploy verification timed out: expected buildSha ${expectedBuildSha}`
+      : 'Deploy verification timed out: /api/admin/users still unavailable',
+  );
 }
 
 async function main() {
@@ -235,30 +222,42 @@ async function main() {
   );
 
   runCli(['login', '--apiKeyId', secretId, '--apiKey', secretKey]);
-  runCli(['cloudrun', 'deploy', '-e', envId, '-s', serverName, '--port', String(port), '--force']);
 
-  await waitForServerReady(client, envId, serverName);
-  const online = await waitForNewOnlineVersion(client, envId, serverName, previousOnline);
-  const imageUrl = online.ImageUrl?.trim();
-  if (!imageUrl) {
-    throw new Error('Online version has no image URL after deploy');
+  // 先同步环境变量到当前在线镜像，避免部署后再用旧镜像回滚代码
+  if (previousOnline?.ImageUrl?.trim()) {
+    await syncServerEnv(client, envId, serverName, port, previousOnline.ImageUrl.trim());
+    await waitForServerReady(client, envId, serverName);
   }
 
-  const detail = await syncServerConfig(client, envId, serverName, port, imageUrl);
-  await waitForServerReady(client, envId, serverName);
+  runCli([
+    'cloudrun',
+    'deploy',
+    '-e',
+    envId,
+    '-s',
+    serverName,
+    '--port',
+    String(port),
+    '--source',
+    '.',
+    '--force',
+  ]);
 
+  await waitForServerReady(client, envId, serverName, 600_000);
+
+  const detail = await client.DescribeCloudRunServerDetail({ EnvId: envId, ServerName: serverName });
   const domain = detail.BaseInfo?.DefaultDomainName;
   const expectedBuildSha = existsSync(path.join(ROOT, 'dist/BUILD_SHA.txt'))
     ? readFileSync(path.join(ROOT, 'dist/BUILD_SHA.txt'), 'utf8').trim()
-    : undefined;
+    : process.env.GITHUB_SHA?.trim();
 
-  if (domain) {
-    console.log(`Cloud Run URL: ${domain}`);
-    console.log(`API base (set VITE_API_BASE): ${domain}/api`);
-    await verifyDeployedService(domain, expectedBuildSha);
-  } else {
-    console.log('Deploy complete. Check CloudBase console for DefaultDomainName.');
+  if (!domain) {
+    throw new Error('Deploy finished but DefaultDomainName is missing');
   }
+
+  console.log(`Cloud Run URL: ${domain}`);
+  console.log(`API base (set VITE_API_BASE): ${domain}/api`);
+  await waitForLiveBuild(domain, expectedBuildSha);
 }
 
 main().catch((error) => {
