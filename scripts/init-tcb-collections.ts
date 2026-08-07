@@ -20,6 +20,7 @@ const COLLECTIONS = [
   'generation_jobs',
   'online_presence',
   'refill_jobs',
+  'score_jobs',
 ] as const;
 
 async function main() {
