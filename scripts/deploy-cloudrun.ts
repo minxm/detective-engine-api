@@ -4,7 +4,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tencentcloud from 'tencentcloud-sdk-nodejs';
 import {
-  buildEnvMap,
   requireEnv,
   validateDeployEnvironment,
 } from './deploy-env.js';
@@ -133,36 +132,6 @@ async function waitForServerReady(
     await sleep(10_000);
   }
   throw new Error('Timed out waiting for Cloud Run service to become ready');
-}
-
-async function syncServerEnv(
-  client: InstanceType<typeof TcbrClient>,
-  envId: string,
-  serverName: string,
-  port: number,
-  imageUrl: string,
-) {
-  const envMap = buildEnvMap();
-  console.log(`Syncing ${Object.keys(envMap).length} environment variables onto ${imageUrl}`);
-
-  await client.UpdateCloudRunServer({
-    EnvId: envId,
-    ServerName: serverName,
-    Business: 'tcb',
-    DeployInfo: {
-      DeployType: 'image',
-      ImageUrl: imageUrl,
-      ReleaseType: 'FULL',
-    },
-    Items: [
-      { Key: 'EnvParam', Value: JSON.stringify(envMap) },
-      { Key: 'Port', IntValue: port },
-      { Key: 'MemSpecs', FloatValue: 2 },
-      { Key: 'CpuSpecs', FloatValue: 1 },
-      { Key: 'MinNum', IntValue: 0 },
-      { Key: 'MaxNum', IntValue: 5 },
-    ],
-  });
 }
 
 function serviceBaseUrl(domain: string): string {
