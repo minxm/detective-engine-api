@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { corsPreflightResponse, jsonResponse, withCors } from '../utils/index.js';
+import { getBuildSha } from '../utils/build-info.js';
 import { handleCaseCreate } from '../../cloud-functions/case/create.js';
 import { handleCaseStatus } from '../../cloud-functions/case/status.js';
 import { handleCaseGet } from '../../cloud-functions/case/get.js';
@@ -113,6 +114,7 @@ export async function handleRequest(ctx: CloudContext): Promise<Response> {
       success: true,
       service: 'detective-engine-api',
       status: 'ok',
+      buildSha: getBuildSha() ?? null,
       docs: 'All business APIs are under /api/*',
       examples: [
         'GET /api/auth/config',

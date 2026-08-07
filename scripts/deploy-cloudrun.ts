@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tencentcloud from 'tencentcloud-sdk-nodejs';
@@ -87,6 +87,55 @@ const FAILED_STATUSES = new Set([
   'error',
 ]);
 
+type OnlineVersion = {
+  VersionName?: string;
+  ImageUrl?: string;
+  FlowRatio?: string;
+};
+
+function pickPrimaryOnlineVersion(versions: OnlineVersion[] | undefined): OnlineVersion | undefined {
+  if (!versions?.length) return undefined;
+  return [...versions].sort((a, b) => Number(b.FlowRatio ?? 0) - Number(a.FlowRatio ?? 0))[0];
+}
+
+async function getPrimaryOnlineVersion(
+  client: InstanceType<typeof TcbrClient>,
+  envId: string,
+  serverName: string,
+): Promise<OnlineVersion | undefined> {
+  const detail = await client.DescribeCloudRunServerDetail({ EnvId: envId, ServerName: serverName });
+  return pickPrimaryOnlineVersion(detail.OnlineVersionInfos);
+}
+
+async function waitForNewOnlineVersion(
+  client: InstanceType<typeof TcbrClient>,
+  envId: string,
+  serverName: string,
+  previous: OnlineVersion | undefined,
+  maxWaitMs = 300_000,
+): Promise<OnlineVersion> {
+  const previousKey = `${previous?.VersionName ?? ''}|${previous?.ImageUrl ?? ''}`;
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const current = await getPrimaryOnlineVersion(client, envId, serverName);
+    const currentKey = `${current?.VersionName ?? ''}|${current?.ImageUrl ?? ''}`;
+    if (current?.ImageUrl?.trim() && currentKey !== previousKey) {
+      console.log(
+        `Online version switched: ${previous?.VersionName ?? '(none)'} -> ${current?.VersionName ?? '(unknown)'}`,
+      );
+      return current;
+    }
+    await sleep(10_000);
+  }
+
+  const fallback = await getPrimaryOnlineVersion(client, envId, serverName);
+  if (fallback?.ImageUrl?.trim()) {
+    console.warn('[deploy-cloudrun] Online version did not change after deploy; continuing with current online version');
+    return fallback;
+  }
+  throw new Error('Timed out waiting for online Cloud Run version after deploy');
+}
+
 async function waitForServerReady(
   client: InstanceType<typeof TcbrClient>,
   envId: string,
@@ -115,29 +164,11 @@ async function syncServerConfig(
   client: InstanceType<typeof TcbrClient>,
   envId: string,
   serverName: string,
-  port: number
+  port: number,
+  imageUrl: string,
 ) {
-  let detail = await client.DescribeCloudRunServerDetail({
-    EnvId: envId,
-    ServerName: serverName,
-  });
-
-  const imageDeadline = Date.now() + 120_000;
-  while (!detail.OnlineVersionInfos?.[0]?.ImageUrl?.trim() && Date.now() < imageDeadline) {
-    console.log('Waiting for online version image URL...');
-    await sleep(10_000);
-    detail = await client.DescribeCloudRunServerDetail({ EnvId: envId, ServerName: serverName });
-  }
-
-  const online = detail.OnlineVersionInfos?.[0];
-  const imageUrl = online?.ImageUrl?.trim();
-  if (!imageUrl) {
-    console.warn('[deploy-cloudrun] 未找到在线版本镜像，跳过环境变量同步（请在控制台手动配置）');
-    return detail;
-  }
-
   const envMap = buildEnvMap();
-  console.log(`Syncing ${Object.keys(envMap).length} environment variables...`);
+  console.log(`Syncing ${Object.keys(envMap).length} environment variables to ${imageUrl}`);
 
   await client.UpdateCloudRunServer({
     EnvId: envId,
@@ -161,6 +192,26 @@ async function syncServerConfig(
   return client.DescribeCloudRunServerDetail({ EnvId: envId, ServerName: serverName });
 }
 
+async function verifyDeployedService(domain: string, expectedBuildSha?: string) {
+  const base = domain.startsWith('http') ? domain.replace(/\/$/, '') : `https://${domain.replace(/\/$/, '')}`;
+  const healthRes = await fetch(`${base}/health`);
+  if (!healthRes.ok) {
+    throw new Error(`Deploy verification failed: /health returned ${healthRes.status}`);
+  }
+  const health = (await healthRes.json()) as { buildSha?: string | null };
+  if (expectedBuildSha && health.buildSha !== expectedBuildSha) {
+    throw new Error(
+      `Deploy verification failed: expected buildSha ${expectedBuildSha}, got ${health.buildSha ?? 'null'}`,
+    );
+  }
+
+  const usersRes = await fetch(`${base}/api/admin/users?page=1&limit=1`);
+  if (usersRes.status === 404) {
+    throw new Error('Deploy verification failed: GET /api/admin/users still returns 404');
+  }
+  console.log(`Deploy verification ok: buildSha=${health.buildSha ?? 'null'}, admin/users=${usersRes.status}`);
+}
+
 async function main() {
   const secretId = requireEnv('TENCENT_SECRET_ID');
   const secretKey = requireEnv('TENCENT_SECRET_KEY');
@@ -173,21 +224,38 @@ async function main() {
   console.log(`Deploying to Cloud Run: env=${envId}, service=${serverName}, port=${port}`);
   writeCloudbaserc(envId, serverName);
 
-  runCli(['login', '--apiKeyId', secretId, '--apiKey', secretKey]);
-  runCli(['cloudrun', 'deploy', '-e', envId, '-s', serverName, '--port', String(port), '--force']);
-
   const client = new TcbrClient({
     credential: { secretId, secretKey },
     region: 'ap-shanghai',
   });
 
+  const previousOnline = await getPrimaryOnlineVersion(client, envId, serverName);
+  console.log(
+    `Previous online version: ${previousOnline?.VersionName ?? '(none)'} image=${previousOnline?.ImageUrl ?? '(none)'}`,
+  );
+
+  runCli(['login', '--apiKeyId', secretId, '--apiKey', secretKey]);
+  runCli(['cloudrun', 'deploy', '-e', envId, '-s', serverName, '--port', String(port), '--force']);
+
   await waitForServerReady(client, envId, serverName);
-  const detail = await syncServerConfig(client, envId, serverName, port);
+  const online = await waitForNewOnlineVersion(client, envId, serverName, previousOnline);
+  const imageUrl = online.ImageUrl?.trim();
+  if (!imageUrl) {
+    throw new Error('Online version has no image URL after deploy');
+  }
+
+  const detail = await syncServerConfig(client, envId, serverName, port, imageUrl);
+  await waitForServerReady(client, envId, serverName);
 
   const domain = detail.BaseInfo?.DefaultDomainName;
+  const expectedBuildSha = existsSync(path.join(ROOT, 'dist/BUILD_SHA.txt'))
+    ? readFileSync(path.join(ROOT, 'dist/BUILD_SHA.txt'), 'utf8').trim()
+    : undefined;
+
   if (domain) {
     console.log(`Cloud Run URL: ${domain}`);
     console.log(`API base (set VITE_API_BASE): ${domain}/api`);
+    await verifyDeployedService(domain, expectedBuildSha);
   } else {
     console.log('Deploy complete. Check CloudBase console for DefaultDomainName.');
   }

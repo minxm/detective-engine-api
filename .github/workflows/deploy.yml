@@ -22,6 +22,9 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      - name: Stamp build id
+        run: echo "${{ github.sha }}" > dist/BUILD_SHA.txt
+
       - name: Install CloudBase CLI
         run: npm install -g @cloudbase/cli
 
