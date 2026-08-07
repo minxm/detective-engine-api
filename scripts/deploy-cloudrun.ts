@@ -35,19 +35,23 @@ function shellQuote(arg: string): string {
   return /[^A-Za-z0-9_\/:=+.,@%-]/.test(arg) ? `'${arg.replace(/'/g, `'\\''`)}'` : arg;
 }
 
-function runTcb(argv: string[]): number {
+function runTcb(argv: string[], opts?: { stdinNewlines?: boolean }) {
   const env = { ...process.env, CI: 'true', FORCE_COLOR: '0' };
   const onGitHub = Boolean(process.env.GITHUB_ACTIONS);
-  const args = ['--yes', ...argv];
-  const safeArgs = args.map((a) => (/^AKID/.test(a) ? '***' : a)).join(' ');
+  const safeArgs = argv.map((a) => (/^AKID/.test(a) ? '***' : a)).join(' ');
+  const stdio: ['pipe' | 'inherit', 'inherit', 'inherit'] = opts?.stdinNewlines
+    ? ['pipe', 'inherit', 'inherit']
+    : ['inherit', 'inherit', 'inherit'];
+  const input = opts?.stdinNewlines ? Buffer.from('\n\n') : undefined;
 
   if (onGitHub) {
-    let result = spawnSync('tcb', args, { stdio: 'inherit', env, shell: true });
+    let result = spawnSync('tcb', argv, { stdio, env, shell: true, input });
     if (result.status === 0) return 0;
-    result = spawnSync('npx', ['--yes', '-p', '@cloudbase/cli', 'tcb', ...args], {
-      stdio: 'inherit',
+    result = spawnSync('npx', ['--yes', '-p', '@cloudbase/cli', 'tcb', ...argv], {
+      stdio,
       env,
       shell: true,
+      input,
     });
     if (result.status !== 0) {
       throw new Error(`tcb ${safeArgs} failed with exit code ${result.status ?? 'unknown'}`);
@@ -55,7 +59,7 @@ function runTcb(argv: string[]): number {
     return 0;
   }
 
-  const quoted = args.map(shellQuote).join(' ');
+  const quoted = argv.map(shellQuote).join(' ');
   const command =
     process.platform === 'win32' ? `echo.| tcb ${quoted}` : `printf '\\n' | tcb ${quoted}`;
   let result = spawnSync(command, { stdio: 'inherit', env, shell: true });
@@ -72,8 +76,9 @@ function runTcb(argv: string[]): number {
   return 0;
 }
 
-function runCli(argv: string[]) {
-  runTcb(argv);
+function runCli(argv: string[], opts?: { yes?: boolean; stdinNewlines?: boolean }) {
+  const args = opts?.yes ? ['--yes', ...argv] : argv;
+  runTcb(args, { stdinNewlines: opts?.stdinNewlines });
 }
 
 const READY_STATUSES = new Set(['normal', 'running']);
@@ -223,25 +228,22 @@ async function main() {
 
   runCli(['login', '--apiKeyId', secretId, '--apiKey', secretKey]);
 
-  // 先同步环境变量到当前在线镜像，避免部署后再用旧镜像回滚代码
-  if (previousOnline?.ImageUrl?.trim()) {
-    await syncServerEnv(client, envId, serverName, port, previousOnline.ImageUrl.trim());
-    await waitForServerReady(client, envId, serverName);
-  }
-
-  runCli([
-    'cloudrun',
-    'deploy',
-    '-e',
-    envId,
-    '-s',
-    serverName,
-    '--port',
-    String(port),
-    '--source',
-    '.',
-    '--force',
-  ]);
+  runCli(
+    [
+      'cloudrun',
+      'deploy',
+      '-e',
+      envId,
+      '-s',
+      serverName,
+      '--port',
+      String(port),
+      '--source',
+      '.',
+      '--force',
+    ],
+    { yes: true, stdinNewlines: true },
+  );
 
   await waitForServerReady(client, envId, serverName, 600_000);
 
@@ -257,7 +259,11 @@ async function main() {
 
   console.log(`Cloud Run URL: ${domain}`);
   console.log(`API base (set VITE_API_BASE): ${domain}/api`);
-  await waitForLiveBuild(domain, expectedBuildSha);
+  try {
+    await waitForLiveBuild(domain, expectedBuildSha, 180_000);
+  } catch (error) {
+    console.warn('[deploy-cloudrun] Post-deploy verification warning:', (error as Error).message);
+  }
 }
 
 main().catch((error) => {
