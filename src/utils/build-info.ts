@@ -9,9 +9,14 @@ export function getBuildSha(): string | undefined {
 
   try {
     const here = path.dirname(fileURLToPath(import.meta.url));
-    const stamp = path.resolve(here, '../BUILD_SHA.txt');
-    if (existsSync(stamp)) {
-      return readFileSync(stamp, 'utf8').trim() || undefined;
+    const candidates = [
+      path.resolve(here, '../../BUILD_SHA.txt'),
+      path.resolve(here, '../BUILD_SHA.txt'),
+    ];
+    for (const stamp of candidates) {
+      if (existsSync(stamp)) {
+        return readFileSync(stamp, 'utf8').trim() || undefined;
+      }
     }
   } catch {
     // ignore
